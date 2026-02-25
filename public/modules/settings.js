@@ -39,6 +39,23 @@ const memoryAddCategory = document.getElementById("memory-add-category");
 const memoryAddText = document.getElementById("memory-add-text");
 const memoryAddBtn = document.getElementById("memory-add-btn");
 
+// 人格版本管理控件
+const systemToolbar = document.getElementById("system-toolbar");
+const insertTemplateBtn = document.getElementById("insert-template-btn");
+const toggleVersionsBtn = document.getElementById("toggle-versions-btn");
+const versionHistory = document.getElementById("version-history");
+const versionList = document.getElementById("version-list");
+const diffOverlay = document.getElementById("diff-overlay");
+const diffCurrent = document.getElementById("diff-current");
+const diffOld = document.getElementById("diff-old");
+const diffVersionInfo = document.getElementById("diff-version-info");
+const diffClose = document.getElementById("diff-close");
+const diffRestoreBtn = document.getElementById("diff-restore-btn");
+const diffCancelBtn = document.getElementById("diff-cancel-btn");
+
+let versionsLoaded = false;
+let currentDiffTs = null;
+
 // 滑块实时显示数值
 configTemp.addEventListener("input", () => (tempVal.textContent = configTemp.value));
 configTopP.addEventListener("input", () => (toppVal.textContent = configTopP.value));
@@ -227,7 +244,15 @@ tabs.forEach((tab) => {
     tabs.forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
     const target = tab.dataset.tab;
-    editSystem.classList.toggle("hidden", target !== "system");
+    const isSystem = target === "system";
+    editSystem.classList.toggle("hidden", !isSystem);
+    systemToolbar.classList.toggle("hidden", !isSystem);
+    // 版本历史：仅在 system tab 且已展开时显示
+    if (!isSystem) {
+      versionHistory.classList.add("hidden");
+    } else if (toggleVersionsBtn.classList.contains("active")) {
+      versionHistory.classList.remove("hidden");
+    }
     memoryPanel.classList.toggle("hidden", target !== "memory");
     editConfig.classList.toggle("hidden", target !== "config");
     editImport.classList.toggle("hidden", target !== "import");
@@ -279,6 +304,13 @@ savePromptsBtn.addEventListener("click", async () => {
     applyPersonalization();
     saveStatus.textContent = "已保存";
     setTimeout(() => (saveStatus.textContent = ""), 2000);
+
+    // 保存后刷新版本历史（如果已展开）
+    if (toggleVersionsBtn.classList.contains("active")) {
+      loadVersionHistory(true);
+    } else {
+      versionsLoaded = false; // 标记需要重新加载
+    }
   } catch (err) {
     saveStatus.textContent = "保存失败: " + err.message;
   }
@@ -381,6 +413,167 @@ modelSelector.addEventListener("change", async () => {
 });
 
 loadModelSelector();
+
+// ===== 人格版本管理 =====
+
+function formatRelativeTime(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  const now = Date.now();
+  const diff = now - date.getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes}分钟前`;
+  if (hours < 24) return `${hours}小时前`;
+  if (days < 7) return `${days}天前`;
+  if (days < 30) return `${Math.floor(days / 7)}周前`;
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function formatAbsoluteTime(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderVersionList(versions) {
+  if (!versions || versions.length === 0) {
+    versionList.innerHTML = `<p class="version-empty">尚无历史版本，保存人格指令后自动创建</p>`;
+    return;
+  }
+
+  versionList.innerHTML = versions
+    .map(
+      (v) =>
+        `<div class="version-item" data-ts="${escapeHtml(v.ts)}">
+          <div class="version-dot"></div>
+          <div class="version-info">
+            <div class="version-time" title="${escapeHtml(formatAbsoluteTime(v.timestamp))}">${escapeHtml(formatRelativeTime(v.timestamp))}</div>
+            <div class="version-preview">${escapeHtml((v.systemPreview || "").slice(0, 60))}</div>
+          </div>
+          <div class="version-actions">
+            <button class="version-action-btn diff-btn" data-ts="${escapeHtml(v.ts)}" type="button">对比</button>
+            <button class="version-action-btn restore-btn" data-ts="${escapeHtml(v.ts)}" data-time="${escapeHtml(formatRelativeTime(v.timestamp))}" type="button">恢复</button>
+          </div>
+        </div>`
+    )
+    .join("");
+}
+
+async function loadVersionHistory(force = false) {
+  if (versionsLoaded && !force) return;
+  versionList.innerHTML = `<p class="version-loading">加载中...</p>`;
+  try {
+    const res = await apiFetch("/api/prompts/versions");
+    if (!res.ok) throw new Error(await readErrorMessage(res));
+    const versions = await res.json();
+    renderVersionList(versions);
+    versionsLoaded = true;
+  } catch (err) {
+    versionList.innerHTML = `<p class="version-empty">加载失败: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function showDiff(ts) {
+  try {
+    const res = await apiFetch(`/api/prompts/versions/${ts}`);
+    if (!res.ok) throw new Error(await readErrorMessage(res));
+    const version = await res.json();
+
+    diffCurrent.textContent = editSystem.value || "(空)";
+    diffOld.textContent = version.system || "(空)";
+    diffVersionInfo.textContent = formatAbsoluteTime(version.timestamp) + " 的版本";
+    currentDiffTs = ts;
+    diffOverlay.classList.remove("hidden");
+  } catch (err) {
+    alert("加载版本详情失败: " + err.message);
+  }
+}
+
+async function restoreVersion(ts, label) {
+  const msg = `确定恢复到${label || "此"}版本吗？\n\n当前状态会自动备份，恢复后可随时找回。`;
+  if (!confirm(msg)) return;
+  try {
+    const res = await apiFetch(`/api/prompts/versions/${ts}/restore`, { method: "POST" });
+    if (!res.ok) throw new Error(await readErrorMessage(res));
+
+    // 重新加载当前人格指令
+    const promptsRes = await apiFetch("/api/prompts");
+    if (promptsRes.ok) {
+      const data = await promptsRes.json();
+      editSystem.value = data.system || "";
+    }
+
+    // 刷新版本列表
+    loadVersionHistory(true);
+
+    // 关闭 diff overlay（如果是从 diff 里点的恢复）
+    diffOverlay.classList.add("hidden");
+    currentDiffTs = null;
+
+    saveStatus.textContent = "已恢复";
+    setTimeout(() => (saveStatus.textContent = ""), 2000);
+  } catch (err) {
+    alert("恢复失败: " + err.message);
+  }
+}
+
+// 版本历史展开/收起
+toggleVersionsBtn.addEventListener("click", () => {
+  const isExpanding = !toggleVersionsBtn.classList.contains("active");
+  toggleVersionsBtn.classList.toggle("active", isExpanding);
+  versionHistory.classList.toggle("hidden", !isExpanding);
+  if (isExpanding) loadVersionHistory();
+});
+
+// 版本列表事件委托（对比 / 恢复）
+versionList.addEventListener("click", (e) => {
+  const diffBtn = e.target.closest(".diff-btn");
+  if (diffBtn) {
+    showDiff(diffBtn.dataset.ts);
+    return;
+  }
+  const restoreBtn = e.target.closest(".restore-btn");
+  if (restoreBtn) {
+    restoreVersion(restoreBtn.dataset.ts, restoreBtn.dataset.time);
+  }
+});
+
+// Diff overlay 关闭
+function closeDiffOverlay() {
+  diffOverlay.classList.add("hidden");
+  currentDiffTs = null;
+}
+
+diffClose.addEventListener("click", closeDiffOverlay);
+diffCancelBtn.addEventListener("click", closeDiffOverlay);
+diffOverlay.addEventListener("click", (e) => {
+  if (e.target === diffOverlay) closeDiffOverlay();
+});
+
+// Diff overlay 恢复按钮
+diffRestoreBtn.addEventListener("click", () => {
+  if (currentDiffTs) restoreVersion(currentDiffTs);
+});
+
+// ===== 插入模板 =====
+
+insertTemplateBtn.addEventListener("click", async () => {
+  if (editSystem.value.trim() && !confirm("这会覆盖你现在写的人格指令，要继续吗？")) return;
+  try {
+    const res = await apiFetch("/api/prompts/template");
+    if (!res.ok) throw new Error(await readErrorMessage(res));
+    const data = await res.json();
+    editSystem.value = data.system || "";
+    editSystem.focus();
+  } catch (err) {
+    alert("加载模板失败: " + err.message);
+  }
+});
 
 // ===== 个性化：实时应用 =====
 export function applyPersonalization() {

@@ -1,7 +1,7 @@
 const fsp = require("fs").promises;
 const path = require("path");
 const router = require("express").Router();
-const { readPromptFile, SYSTEM_PATH, readMemoryStore, writeMemoryStore, renderMemoryForPrompt } = require("../lib/prompts");
+const { readPromptFile, SYSTEM_PATH, readMemoryStore, writeMemoryStore, renderMemoryForPrompt, DEFAULT_SYSTEM } = require("../lib/prompts");
 const { validatePromptPatch } = require("../lib/validators");
 const { atomicWrite, backupPrompts } = require("../lib/config");
 const { withMemoryLock } = require("../lib/auto-learn");
@@ -31,9 +31,12 @@ router.put("/prompts", async (req, res) => {
 
   const { system, memory, memoryStore } = validated.value;
   try {
-    // system 有变更时自动存版本快照（包含 system + memory 的完整状态）
+    // system 实际内容变更时才存版本快照（避免重复保存产生冗余版本）
     if (system !== undefined) {
-      await backupPrompts();
+      const current = await readPromptFile(SYSTEM_PATH);
+      if (system !== current) {
+        await backupPrompts();
+      }
     }
 
     const writes = [];
@@ -56,6 +59,12 @@ router.put("/prompts", async (req, res) => {
   }
 });
 
+// ===== 出厂模板 =====
+
+router.get("/prompts/template", (req, res) => {
+  res.json({ system: DEFAULT_SYSTEM });
+});
+
 // ===== 人格版本管理 =====
 
 /** 列出所有版本快照 */
@@ -67,15 +76,20 @@ router.get("/prompts/versions", async (req, res) => {
       .sort()
       .reverse(); // 最新的在前
 
+    // 去重：连续相同 system 内容的版本只保留最新的
     const versions = [];
+    let prevSystem = null;
     for (const file of files) {
       try {
         const raw = await fsp.readFile(path.join(BACKUPS_DIR, file), "utf-8");
         const data = JSON.parse(raw);
+        const sys = data.system || "";
+        if (sys === prevSystem) continue; // 跳过与上一条相同的
+        prevSystem = sys;
         versions.push({
           ts: file.replace(".json", ""),
           timestamp: data.timestamp,
-          systemPreview: (data.system || "").slice(0, 100),
+          systemPreview: sys.slice(0, 100),
           memoryPreview: (data.memory || "").slice(0, 100),
         });
       } catch (e) { console.warn("[prompts] skipping corrupted backup:", file, e.message); }

@@ -158,7 +158,37 @@
         </div>
 
         <div id="settings-body">
+          <!-- 人格指令工具栏 -->
+          <div id="system-toolbar" class="system-toolbar">
+            <button id="insert-template-btn" class="toolbar-btn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" class="toolbar-icon">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+              插入模板
+            </button>
+            <button id="toggle-versions-btn" class="toolbar-btn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" class="toolbar-icon">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              <span>版本历史</span>
+              <svg viewBox="0 0 24 24" fill="none" class="toolbar-chevron">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+          </div>
+
           <textarea id="edit-system" class="prompt-editor" placeholder="人格指令（角色定义、风格规则、技能清单...）"></textarea>
+
+          <!-- 版本历史面板（默认收起） -->
+          <div id="version-history" class="version-history hidden">
+            <div id="version-list" class="version-list"></div>
+          </div>
+
           <div id="memory-panel" class="memory-panel hidden">
             <div class="config-section-title">个性化</div>
             <div class="config-row text-input-row">
@@ -373,6 +403,31 @@
       integrity="sha384-JEyTNhjM6R1ElGoJns4U2Ln4ofPcqzSsynQkmEc/KGy6336qAZl70tDLufbkla+3"
       crossorigin="anonymous"></script>
     <script type="module" src="app.js"></script>
+
+    <!-- Diff 对比 overlay（放在 body 直接子级，避免 transform 影响 fixed 定位） -->
+    <div id="diff-overlay" class="diff-overlay hidden">
+      <div class="diff-panel">
+        <div class="diff-header">
+          <span class="diff-title">版本对比</span>
+          <span id="diff-version-info" class="diff-version-info"></span>
+          <button id="diff-close" class="diff-close-btn">&times;</button>
+        </div>
+        <div class="diff-body">
+          <div class="diff-col">
+            <div class="diff-col-label">当前版本</div>
+            <pre id="diff-current" class="diff-content"></pre>
+          </div>
+          <div class="diff-col">
+            <div class="diff-col-label">历史版本</div>
+            <pre id="diff-old" class="diff-content"></pre>
+          </div>
+        </div>
+        <div class="diff-footer">
+          <button id="diff-restore-btn" class="btn-primary" type="button">恢复此版本</button>
+          <button id="diff-cancel-btn" class="btn-secondary" type="button">关闭</button>
+        </div>
+      </div>
+    </div>
 </body>
 
 </html>
