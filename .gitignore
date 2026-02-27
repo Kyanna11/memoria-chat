@@ -1,0 +1,11 @@
+.env
+node_modules/
+logs/
+data/
+prompts/backups/
+prompts/memory.md
+prompts/memory.json
+prompts/system.md
+CLAUDE.md
+.claude/
+todo.md

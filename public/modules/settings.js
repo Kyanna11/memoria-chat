@@ -1,0 +1,394 @@
+import { state, modelSelector, inputEl, welcomeGreetingEl, getCurrentConv, randomGreeting } from "./state.js";
+import { apiFetch, readErrorMessage } from "./api.js";
+import { initImportTab } from "./import.js";
+
+const settingsBtn = document.getElementById("settings-btn");
+const settingsOverlay = document.getElementById("settings-overlay");
+const settingsClose = document.getElementById("settings-close");
+const editSystem = document.getElementById("edit-system");
+const editMemory = document.getElementById("edit-memory");
+const memoryPanel = document.getElementById("memory-panel");
+const memoryStructured = document.getElementById("memory-structured");
+const editConfig = document.getElementById("edit-config");
+const editImport = document.getElementById("edit-import");
+const savePromptsBtn = document.getElementById("save-prompts");
+const resetDefaultsBtn = document.getElementById("reset-defaults");
+const saveStatus = document.getElementById("save-status");
+const tabs = document.querySelectorAll("#settings-tabs .tab");
+
+// 模型参数控件
+const configModel = document.getElementById("config-model");
+const configTemp = document.getElementById("config-temp");
+const configTopP = document.getElementById("config-topp");
+const configPP = document.getElementById("config-pp");
+const configFP = document.getElementById("config-fp");
+const configCtx = document.getElementById("config-ctx");
+const tempVal = document.getElementById("temp-val");
+const toppVal = document.getElementById("topp-val");
+const ppVal = document.getElementById("pp-val");
+const fpVal = document.getElementById("fp-val");
+const ctxVal = document.getElementById("ctx-val");
+const currentModelDisplay = document.getElementById("current-model-display");
+
+// 个性化控件
+const configAiName = document.getElementById("config-ai-name");
+const configUserName = document.getElementById("config-user-name");
+
+// 记忆添加控件
+const memoryAddCategory = document.getElementById("memory-add-category");
+const memoryAddText = document.getElementById("memory-add-text");
+const memoryAddBtn = document.getElementById("memory-add-btn");
+
+// 滑块实时显示数值
+configTemp.addEventListener("input", () => (tempVal.textContent = configTemp.value));
+configTopP.addEventListener("input", () => (toppVal.textContent = configTopP.value));
+configPP.addEventListener("input", () => (ppVal.textContent = configPP.value));
+configFP.addEventListener("input", () => (fpVal.textContent = configFP.value));
+configCtx.addEventListener("input", () => (ctxVal.textContent = configCtx.value));
+
+// ===== 结构化记忆 UI =====
+
+const CATEGORY_LABELS = {
+  identity: "核心身份",
+  preferences: "偏好习惯",
+  events: "近期动态",
+};
+
+function renderMemoryList(store) {
+  if (!store) return;
+  state.memoryStore = store;
+
+  for (const category of ["identity", "preferences", "events"]) {
+    const container = memoryStructured.querySelector(`.memory-category[data-category="${category}"] .memory-items`);
+    if (!container) continue;
+
+    const items = store[category] || [];
+    if (items.length === 0) {
+      container.innerHTML = `<p class="memory-empty">暂无${CATEGORY_LABELS[category]}记录</p>`;
+      continue;
+    }
+
+    container.innerHTML = items
+      .map(
+        (item) =>
+          `<div class="memory-item" data-id="${item.id}" data-category="${category}">
+            <span class="memory-text">${escapeHtml(item.text)}</span>
+            <span class="memory-date">${item.date}</span>
+            <button class="memory-delete-btn" title="删除">&times;</button>
+          </div>`
+      )
+      .join("");
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// 删除记忆项（事件委托）
+memoryStructured.addEventListener("click", (e) => {
+  const btn = e.target.closest(".memory-delete-btn");
+  if (!btn) return;
+
+  const itemEl = btn.closest(".memory-item");
+  if (!itemEl || !state.memoryStore) return;
+
+  const id = itemEl.dataset.id;
+  const category = itemEl.dataset.category;
+
+  const arr = state.memoryStore[category];
+  if (!arr) return;
+
+  const idx = arr.findIndex((item) => item.id === id);
+  if (idx !== -1) {
+    arr.splice(idx, 1);
+    renderMemoryList(state.memoryStore);
+  }
+});
+
+// 添加记忆项
+function addMemoryItem() {
+  const text = memoryAddText.value.trim();
+  if (!text) return;
+  if (Array.from(text).length > 80) {
+    memoryAddText.setCustomValidity("最多80字");
+    memoryAddText.reportValidity();
+    return;
+  }
+
+  if (!state.memoryStore) {
+    state.memoryStore = { version: 1, identity: [], preferences: [], events: [] };
+  }
+
+  const category = memoryAddCategory.value;
+  const today = new Date().toISOString().slice(0, 10);
+
+  state.memoryStore[category].push({
+    id: `m_${Date.now()}${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}`,
+    text,
+    date: today,
+    source: "user_stated",
+  });
+
+  memoryAddText.value = "";
+  memoryAddText.setCustomValidity("");
+  renderMemoryList(state.memoryStore);
+}
+
+memoryAddBtn.addEventListener("click", addMemoryItem);
+memoryAddText.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    addMemoryItem();
+  }
+});
+
+export async function loadConfigPanel() {
+  try {
+    const [modelsRes, configRes] = await Promise.all([
+      apiFetch("/api/models"),
+      apiFetch("/api/config"),
+    ]);
+    if (!modelsRes.ok) throw new Error(await readErrorMessage(modelsRes));
+    if (!configRes.ok) throw new Error(await readErrorMessage(configRes));
+    const models = await modelsRes.json();
+    const config = await configRes.json();
+    state.currentConfig = config;
+
+    // 显示当前模型
+    currentModelDisplay.textContent = "当前模型: " + config.model;
+
+    // 填充模型下拉框
+    configModel.innerHTML = "";
+    models.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      if (m === config.model) opt.selected = true;
+      configModel.appendChild(opt);
+    });
+
+    // 填充个性化字段
+    configAiName.value = config.ai_name || "";
+    configUserName.value = config.user_name || "";
+    // 填充参数
+    configTemp.value = config.temperature ?? 1;
+    tempVal.textContent = configTemp.value;
+    configTopP.value = config.top_p ?? 1;
+    toppVal.textContent = configTopP.value;
+    configPP.value = config.presence_penalty ?? 0;
+    ppVal.textContent = configPP.value;
+    configFP.value = config.frequency_penalty ?? 0;
+    fpVal.textContent = configFP.value;
+    configCtx.value = config.context_window ?? 50;
+    ctxVal.textContent = config.context_window ?? 50;
+  } catch (err) {
+    console.error("加载配置失败:", err);
+  }
+}
+
+// 打开设置
+settingsBtn.addEventListener("click", async () => {
+  settingsOverlay.classList.remove("hidden");
+  saveStatus.textContent = "";
+  try {
+    const res = await apiFetch("/api/prompts");
+    if (!res.ok) throw new Error(await readErrorMessage(res));
+    const data = await res.json();
+    editSystem.value = data.system || "";
+    editMemory.value = data.memory || "";
+
+    // 加载结构化记忆
+    if (data.memoryStore) {
+      renderMemoryList(data.memoryStore);
+    }
+  } catch (err) {
+    editSystem.value = "// 加载失败: " + err.message;
+  }
+  loadConfigPanel();
+});
+
+// 关闭设置
+settingsClose.addEventListener("click", () => {
+  settingsOverlay.classList.add("hidden");
+});
+
+settingsOverlay.addEventListener("click", (e) => {
+  if (e.target === settingsOverlay) {
+    settingsOverlay.classList.add("hidden");
+  }
+});
+
+// Tab 切换
+tabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    tabs.forEach((t) => t.classList.remove("active"));
+    tab.classList.add("active");
+    const target = tab.dataset.tab;
+    editSystem.classList.toggle("hidden", target !== "system");
+    memoryPanel.classList.toggle("hidden", target !== "memory");
+    editConfig.classList.toggle("hidden", target !== "config");
+    editImport.classList.toggle("hidden", target !== "import");
+    if (target === "import") initImportTab();
+  });
+});
+
+// 保存
+savePromptsBtn.addEventListener("click", async () => {
+  saveStatus.textContent = "保存中...";
+  try {
+    // 保存 prompt 文件（发送 memoryStore 替代纯文本 memory）
+    const promptBody = { system: editSystem.value };
+    if (state.memoryStore) {
+      promptBody.memoryStore = state.memoryStore;
+    }
+
+    const promptsRes = await apiFetch("/api/prompts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(promptBody),
+    });
+    if (!promptsRes.ok) throw new Error(await readErrorMessage(promptsRes));
+
+    // 保存模型配置（含个性化字段）
+    const configBody = {
+      model: configModel.value,
+      temperature: parseFloat(configTemp.value),
+      top_p: parseFloat(configTopP.value),
+      presence_penalty: parseFloat(configPP.value),
+      frequency_penalty: parseFloat(configFP.value),
+      context_window: parseInt(configCtx.value, 10),
+      ai_name: configAiName.value.trim(),
+      user_name: configUserName.value.trim(),
+    };
+    const configRes = await apiFetch("/api/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(configBody),
+    });
+    if (!configRes.ok) throw new Error(await readErrorMessage(configRes));
+    state.currentConfig = { ...(state.currentConfig || {}), ...configBody };
+
+    // 同步顶栏模型选择器
+    if (modelSelector.value !== configModel.value) {
+      modelSelector.value = configModel.value;
+    }
+
+    applyPersonalization();
+    saveStatus.textContent = "已保存";
+    setTimeout(() => (saveStatus.textContent = ""), 2000);
+  } catch (err) {
+    saveStatus.textContent = "保存失败: " + err.message;
+  }
+});
+
+// 恢复默认
+resetDefaultsBtn.addEventListener("click", async () => {
+  if (!confirm("确定要恢复所有设置为默认值吗？\n\n人格指令、长期记忆和模型参数将被重置，已导入的对话不受影响。")) return;
+  saveStatus.textContent = "恢复中...";
+  try {
+    const res = await apiFetch("/api/settings/reset", { method: "POST" });
+    if (!res.ok) throw new Error(await readErrorMessage(res));
+    const data = await res.json();
+
+    // 更新 prompt 编辑器
+    editSystem.value = data.system;
+    editMemory.value = data.memory || "";
+
+    // 更新结构化记忆
+    if (data.memoryStore) {
+      renderMemoryList(data.memoryStore);
+    } else {
+      renderMemoryList({ version: 1, identity: [], preferences: [], events: [] });
+    }
+
+    // 更新 config sliders
+    state.currentConfig = data.config;
+    configTemp.value = data.config.temperature;
+    tempVal.textContent = data.config.temperature;
+    configTopP.value = data.config.top_p ?? 1;
+    toppVal.textContent = data.config.top_p ?? 1;
+    configPP.value = data.config.presence_penalty;
+    ppVal.textContent = data.config.presence_penalty;
+    configFP.value = data.config.frequency_penalty;
+    fpVal.textContent = data.config.frequency_penalty;
+    configCtx.value = data.config.context_window;
+    ctxVal.textContent = data.config.context_window;
+
+    // 清空个性化字段
+    configAiName.value = "";
+    configUserName.value = "";
+
+    // 同步模型下拉框
+    configModel.value = data.config.model;
+    modelSelector.value = data.config.model;
+    currentModelDisplay.textContent = "当前模型: " + data.config.model;
+
+    applyPersonalization();
+    saveStatus.textContent = "已恢复默认";
+    setTimeout(() => (saveStatus.textContent = ""), 2000);
+  } catch (err) {
+    saveStatus.textContent = "重置失败: " + err.message;
+  }
+});
+
+export async function loadModelSelector() {
+  try {
+    const [modelsRes, configRes] = await Promise.all([
+      apiFetch("/api/models"),
+      apiFetch("/api/config"),
+    ]);
+    if (!modelsRes.ok || !configRes.ok) return;
+    const models = await modelsRes.json();
+    const config = await configRes.json();
+    state.currentConfig = config;
+
+    modelSelector.innerHTML = "";
+    models.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      if (m === config.model) opt.selected = true;
+      modelSelector.appendChild(opt);
+    });
+    applyPersonalization();
+  } catch (err) {
+    console.error("加载模型列表失败:", err);
+  }
+}
+
+modelSelector.addEventListener("change", async () => {
+  try {
+    const saveRes = await apiFetch("/api/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: modelSelector.value }),
+    });
+    if (!saveRes.ok) throw new Error("保存失败");
+    const data = await saveRes.json();
+    state.currentConfig = data.config;
+
+    // 同步设置面板的模型下拉框
+    if (configModel.value !== modelSelector.value) {
+      configModel.value = modelSelector.value;
+    }
+    currentModelDisplay.textContent = "当前模型: " + modelSelector.value;
+  } catch (err) {
+    console.error("切换模型失败:", err);
+  }
+});
+
+loadModelSelector();
+
+// ===== 个性化：实时应用 =====
+export function applyPersonalization() {
+  const aiName = state.currentConfig?.ai_name;
+  inputEl.placeholder = aiName ? `给 ${aiName} 发消息...` : "给 4o 发消息...";
+
+  const conv = getCurrentConv();
+  if (!conv || !conv.messages?.length) {
+    welcomeGreetingEl.textContent = randomGreeting();
+  }
+}
