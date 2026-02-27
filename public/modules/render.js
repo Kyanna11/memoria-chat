@@ -22,6 +22,22 @@ export function getMessageText(content) {
   return content;
 }
 
+const DOC_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
+
+function renderDocCard(fileName) {
+  const ext = fileName.slice(fileName.lastIndexOf(".") + 1).toUpperCase();
+  return `<div class="doc-card"><div class="doc-card-icon">${DOC_ICON}</div><div class="doc-card-info"><span class="doc-card-name">${fileName.replace(/</g, "&lt;")}</span><span class="doc-card-ext">${ext}</span></div></div>`;
+}
+
+/** 将消息文本中的 📎 filename 标记替换为文件卡片 HTML，返回 { html, rest } */
+function extractDocMarker(text) {
+  const match = text.match(/^📎\s*(.+)$/m);
+  if (!match) return null;
+  const fileName = match[1].trim();
+  const rest = text.replace(match[0], "").trim();
+  return { fileName, rest };
+}
+
 export function createMsgToolbar(msg, msgIndex) {
   const toolbar = document.createElement("div");
   toolbar.className = "msg-toolbar";
@@ -102,9 +118,21 @@ export function renderMessages() {
       const combinedText = textParts.join("\n").trim();
       if (combinedText) {
         if (msg.role === "user") {
-          const p = document.createElement("p");
-          p.textContent = combinedText;
-          bubble.appendChild(p);
+          const docInfo = extractDocMarker(combinedText);
+          if (docInfo) {
+            const cardWrapper = document.createElement("div");
+            cardWrapper.innerHTML = renderDocCard(docInfo.fileName);
+            div.appendChild(cardWrapper.firstChild);
+            if (docInfo.rest) {
+              const p = document.createElement("p");
+              p.textContent = docInfo.rest;
+              bubble.appendChild(p);
+            }
+          } else {
+            const p = document.createElement("p");
+            p.textContent = combinedText;
+            bubble.appendChild(p);
+          }
         } else {
           const contentContainer = document.createElement("div");
           contentContainer.innerHTML = renderMarkdown(combinedText);
@@ -112,7 +140,15 @@ export function renderMessages() {
         }
       }
     } else if (msg.role === "user") {
-      bubble.textContent = msg.content;
+      const docInfo = extractDocMarker(msg.content);
+      if (docInfo) {
+        const cardWrapper = document.createElement("div");
+        cardWrapper.innerHTML = renderDocCard(docInfo.fileName);
+        div.appendChild(cardWrapper.firstChild);
+        if (docInfo.rest) bubble.textContent = docInfo.rest;
+      } else {
+        bubble.textContent = msg.content;
+      }
     } else {
       // 历史消息的思考链折叠块
       if (msg.reasoning) {
@@ -145,7 +181,9 @@ export function renderMessages() {
       }
     }
 
-    div.appendChild(bubble);
+    if (bubble.childNodes.length > 0 || bubble.textContent) {
+      div.appendChild(bubble);
+    }
     div.appendChild(createMsgToolbar(msg, idx));
     messagesEl.appendChild(div);
   });

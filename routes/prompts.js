@@ -1,7 +1,7 @@
 const fsp = require("fs").promises;
 const path = require("path");
 const router = require("express").Router();
-const { readPromptFile, SYSTEM_PATH, readMemoryStore, writeMemoryStore, renderMemoryForPrompt, DEFAULT_SYSTEM } = require("../lib/prompts");
+const { readPromptFile, SYSTEM_PATH, readMemoryStore, writeMemoryStore, renderMemoryForPrompt, DEFAULT_SYSTEM, SYSTEM_TEMPLATE } = require("../lib/prompts");
 const { validatePromptPatch } = require("../lib/validators");
 const { atomicWrite, backupPrompts } = require("../lib/config");
 const { withMemoryLock } = require("../lib/auto-learn");
@@ -31,23 +31,6 @@ router.put("/prompts", async (req, res) => {
 
   const { system, memory, memoryStore } = validated.value;
   try {
-    // 内容实际变更时才存版本快照（避免重复保存产生冗余版本）
-    let needBackup = false;
-    if (system !== undefined) {
-      const current = await readPromptFile(SYSTEM_PATH);
-      if (system !== current) needBackup = true;
-    }
-    if (!needBackup && memoryStore !== undefined) {
-      const currentStore = await readMemoryStore().catch(() => null);
-      if (currentStore) {
-        // 排除 updatedAt（每次写入都会重新生成），避免误判为内容变更
-        const { updatedAt: _a, ...incoming } = memoryStore;
-        const { updatedAt: _b, ...existing } = currentStore;
-        if (JSON.stringify(incoming) !== JSON.stringify(existing)) needBackup = true;
-      }
-    }
-    if (needBackup) await backupPrompts();
-
     const writes = [];
     if (system !== undefined) writes.push(atomicWrite(SYSTEM_PATH, system));
 
@@ -68,10 +51,22 @@ router.put("/prompts", async (req, res) => {
   }
 });
 
+// ===== 手动保存版本 =====
+
+router.post("/prompts/backup", async (req, res) => {
+  try {
+    await backupPrompts();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[prompts] backup error:", err);
+    res.status(500).json({ error: "备份失败" });
+  }
+});
+
 // ===== 出厂模板 =====
 
 router.get("/prompts/template", (req, res) => {
-  res.json({ system: DEFAULT_SYSTEM });
+  res.json({ system: SYSTEM_TEMPLATE });
 });
 
 // ===== 人格版本管理 =====
@@ -157,6 +152,22 @@ router.post("/prompts/versions/:ts/restore", async (req, res) => {
   } catch (err) {
     if (err.code === "ENOENT") return res.status(404).json({ error: "Version not found." });
     console.error("[prompts] version restore error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** 删除某个版本 */
+router.delete("/prompts/versions/:ts", async (req, res) => {
+  const ts = req.params.ts;
+  if (!/^\d+$/.test(ts)) return res.status(400).json({ error: "Invalid version id." });
+
+  const filePath = path.join(BACKUPS_DIR, `${ts}.json`);
+  try {
+    await fsp.unlink(filePath);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.code === "ENOENT") return res.status(404).json({ error: "Version not found." });
+    console.error("[prompts] version delete error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

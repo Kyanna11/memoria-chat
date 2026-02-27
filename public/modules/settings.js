@@ -53,6 +53,8 @@ const diffClose = document.getElementById("diff-close");
 const diffRestoreBtn = document.getElementById("diff-restore-btn");
 const diffCancelBtn = document.getElementById("diff-cancel-btn");
 
+const saveVersionBtn = document.getElementById("save-version-btn");
+
 let versionsLoaded = false;
 let currentDiffTs = null;
 let diffRequestSeq = 0;
@@ -307,12 +309,6 @@ savePromptsBtn.addEventListener("click", async () => {
     saveStatus.textContent = "已保存";
     setTimeout(() => (saveStatus.textContent = ""), 2000);
 
-    // 保存后刷新版本历史（如果已展开）
-    if (toggleVersionsBtn.classList.contains("active")) {
-      loadVersionHistory(true);
-    } else {
-      versionsLoaded = false; // 标记需要重新加载
-    }
   } catch (err) {
     saveStatus.textContent = "保存失败: " + err.message;
   }
@@ -460,6 +456,7 @@ function renderVersionList(versions) {
           <div class="version-actions">
             <button class="version-action-btn diff-btn" data-ts="${escapeHtml(v.ts)}" type="button">对比</button>
             <button class="version-action-btn restore-btn" data-ts="${escapeHtml(v.ts)}" data-time="${escapeHtml(formatRelativeTime(v.timestamp))}" type="button">恢复</button>
+            <button class="version-action-btn delete-version-btn" data-ts="${escapeHtml(v.ts)}" type="button" title="删除此版本">&times;</button>
           </div>
         </div>`
     )
@@ -533,6 +530,51 @@ async function restoreVersion(ts, label) {
   }
 }
 
+// 手动保存版本
+saveVersionBtn.addEventListener("click", async () => {
+  saveVersionBtn.disabled = true;
+  try {
+    // 先保存当前内容到服务端
+    const promptBody = { system: editSystem.value };
+    if (state.memoryStore) promptBody.memoryStore = state.memoryStore;
+    const saveRes = await apiFetch("/api/prompts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(promptBody),
+    });
+    if (!saveRes.ok) throw new Error(await readErrorMessage(saveRes));
+
+    // 再调用备份接口
+    const res = await apiFetch("/api/prompts/backup", { method: "POST" });
+    if (!res.ok) throw new Error(await readErrorMessage(res));
+
+    saveStatus.textContent = "版本已保存";
+    setTimeout(() => (saveStatus.textContent = ""), 2000);
+
+    // 刷新版本列表
+    if (toggleVersionsBtn.classList.contains("active")) {
+      loadVersionHistory(true);
+    } else {
+      versionsLoaded = false;
+    }
+  } catch (err) {
+    saveStatus.textContent = "保存版本失败: " + err.message;
+  } finally {
+    saveVersionBtn.disabled = false;
+  }
+});
+
+async function deleteVersion(ts) {
+  if (!confirm("确定删除此版本？删除后无法恢复。")) return;
+  try {
+    const res = await apiFetch(`/api/prompts/versions/${ts}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(await readErrorMessage(res));
+    loadVersionHistory(true);
+  } catch (err) {
+    alert("删除失败: " + err.message);
+  }
+}
+
 // 版本历史展开/收起
 toggleVersionsBtn.addEventListener("click", () => {
   const isExpanding = !toggleVersionsBtn.classList.contains("active");
@@ -551,6 +593,11 @@ versionList.addEventListener("click", (e) => {
   const restoreBtn = e.target.closest(".restore-btn");
   if (restoreBtn) {
     restoreVersion(restoreBtn.dataset.ts, restoreBtn.dataset.time);
+    return;
+  }
+  const deleteBtn = e.target.closest(".delete-version-btn");
+  if (deleteBtn) {
+    deleteVersion(deleteBtn.dataset.ts);
   }
 });
 
