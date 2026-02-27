@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-02-27
+
+### Stability Fixes (Phase 0 前置债务清理)
+- **Token 认证锁修复** — 用户取消认证弹框后不再卡死，无需刷新页面即可重新输入 (`public/modules/api.js`)
+- **ResizeObserver 泄漏修复** — 短回复和切换对话时 spacer observer 保底断开，长会话不再遗留大量活跃 observer (`public/modules/chat.js`)
+- **Auto-Learn 冷却 Map 清理** — 冷却记录超过 500 条时自动清理过期条目，服务长跑不再内存泄漏 (`lib/auto-learn.js`)
+- **rebuildIndex 并发控制** — 对话文件读取从全量并发改为每批 20 个，大量对话时不再爆文件描述符 EMFILE (`lib/config.js`)
+- **orphan-image 清理并发控制** — 对话文件读取和孤儿图片删除均改为分批 20 个并发，与 rebuildIndex 一致 (`routes/conversations.js`)
+
 ## 2026-02-25
 
 ### New Features

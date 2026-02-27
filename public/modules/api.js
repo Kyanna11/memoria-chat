@@ -237,6 +237,7 @@ export async function apiFetch(url, options = {}, allowRetry = true) {
         _resolve(token && token.trim() ? token.trim() : null);
       }
       const token = await _tokenPromptLock;
+      _tokenPromptLock = null;          // 无论成功与否，释放锁，允许下次重新弹框
       if (token) {
         localStorage.setItem("api_token", token);
         document.cookie = "api_token=" + encodeURIComponent(token) + "; path=/; SameSite=Strict";

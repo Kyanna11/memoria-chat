@@ -176,21 +176,23 @@ export async function streamAssistantReply(conv, outboundUserContent = null) {
 
   // 在占位符前插入助手消息，保持用户消息在视口顶部
   const scrollSpacer = messagesEl.querySelector("#scroll-spacer");
+  let _spacerObserver = null;           // 引用提升，收尾阶段保底 disconnect
   if (scrollSpacer) {
     messagesEl.insertBefore(div, scrollSpacer);
     // 助手消息长大时，占位符对应缩小，总高度不变
     const initialSpacerH = parseFloat(scrollSpacer.style.height) || 0;
-    const spacerObserver = new ResizeObserver(() => {
+    _spacerObserver = new ResizeObserver(() => {
       const remaining = Math.max(0, initialSpacerH - div.offsetHeight);
       scrollSpacer.style.height = remaining + "px";
       if (remaining <= 0 && scrollSpacer.parentNode) {
         scrollSpacer.remove();
-        spacerObserver.disconnect();
+        _spacerObserver.disconnect();
+        _spacerObserver = null;
         // 占位符消失后立即跳到底部，让 startStreamFollow 接管后续滚动
         messagesEl.scrollTop = messagesEl.scrollHeight;
       }
     });
-    spacerObserver.observe(div);
+    _spacerObserver.observe(div);
   } else {
     messagesEl.appendChild(div);
     scrollToBottom(true);
@@ -354,6 +356,7 @@ export async function streamAssistantReply(conv, outboundUserContent = null) {
     // 用户主动切换对话导致的 abort，静默保存已有内容
     if (state.streamAbortedBySwitch) {
       state.streamAbortedBySwitch = false;
+      if (_spacerObserver) { _spacerObserver.disconnect(); _spacerObserver = null; }
       saveConversations();
       stopStreamFollow();
       setStreaming(false);
@@ -374,6 +377,13 @@ export async function streamAssistantReply(conv, outboundUserContent = null) {
 
   // 2. 去掉光标 + 停止跟随（纯文本保持可见）
   cursor.remove();
+  // 保底：短回复时 spacerObserver 可能永远不会自行 disconnect
+  if (_spacerObserver) {
+    _spacerObserver.disconnect();
+    _spacerObserver = null;
+    const leftoverSpacer = messagesEl.querySelector("#scroll-spacer");
+    if (leftoverSpacer) leftoverSpacer.remove();
+  }
   stopStreamFollow();
 
   // 3. 让无光标的纯文本先画一帧（视觉过渡自然）

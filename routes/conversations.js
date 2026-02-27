@@ -311,18 +311,23 @@ router.post("/conversations/cleanup-orphan-images", async (req, res) => {
       (f) => f.endsWith(".json") && f !== "_index.json"
     );
     const referenced = new Set();
-    await Promise.all(
-      files.map(async (file) => {
-        try {
-          const raw = await fsp.readFile(path.join(CONVERSATIONS_DIR, file), "utf-8");
-          const conv = JSON.parse(raw);
-          const images = extractImageFilenames(conv.messages || []);
-          images.forEach((img) => referenced.add(img));
-        } catch (err) {
-          console.warn(`[cleanup-orphans] Skip damaged file: ${file}`, err.message);
-        }
-      })
-    );
+    // 分批读取，防止大量对话文件时 EMFILE（文件描述符耗尽）
+    const BATCH = 20;
+    for (let i = 0; i < files.length; i += BATCH) {
+      const batch = files.slice(i, i + BATCH);
+      await Promise.all(
+        batch.map(async (file) => {
+          try {
+            const raw = await fsp.readFile(path.join(CONVERSATIONS_DIR, file), "utf-8");
+            const conv = JSON.parse(raw);
+            const images = extractImageFilenames(conv.messages || []);
+            images.forEach((img) => referenced.add(img));
+          } catch (err) {
+            console.warn(`[cleanup-orphans] Skip damaged file: ${file}`, err.message);
+          }
+        })
+      );
+    }
 
     // 2. 扫描 images 目录，找出未被引用的文件
     const allImages = await fsp.readdir(IMAGES_DIR);
@@ -333,18 +338,22 @@ router.post("/conversations/cleanup-orphan-images", async (req, res) => {
       return res.json({ deleted: 0, orphans: [] });
     }
 
-    const results = await Promise.allSettled(
-      orphans.map((img) => fsp.unlink(path.join(IMAGES_DIR, img)))
-    );
+    // 分批删除，防止大量孤儿文件时 EMFILE
     const deleted = [];
     const failed = [];
-    results.forEach((r, i) => {
-      if (r.status === "fulfilled") {
-        deleted.push(orphans[i]);
-      } else {
-        failed.push({ file: orphans[i], error: r.reason?.message || "Unknown error" });
-      }
-    });
+    for (let i = 0; i < orphans.length; i += BATCH) {
+      const batch = orphans.slice(i, i + BATCH);
+      const results = await Promise.allSettled(
+        batch.map((img) => fsp.unlink(path.join(IMAGES_DIR, img)))
+      );
+      results.forEach((r, j) => {
+        if (r.status === "fulfilled") {
+          deleted.push(batch[j]);
+        } else {
+          failed.push({ file: batch[j], error: r.reason?.message || "Unknown error" });
+        }
+      });
+    }
 
     console.log(`[cleanup-orphans] Deleted ${deleted.length} orphan image(s)`);
     if (failed.length > 0) {
