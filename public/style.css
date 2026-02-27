@@ -1159,60 +1159,88 @@ body {
   text-align: center;
 }
 
-/* ===== 主题切换按钮 ===== */
-#theme-toggle {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  padding: 10px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  text-align: left;
+/* ===== 侧边栏底部工具栏 ===== */
+#sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 0 4px;
   margin-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+#manage-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   transition: background 0.15s, color 0.15s;
 }
 
-#theme-toggle:hover {
+#manage-btn:hover {
   background: var(--hover-bg);
   color: var(--text-primary);
 }
 
-/* ===== 侧边栏设置按钮 ===== */
+/* ===== 右上角主题切换圆形按钮 ===== */
+#theme-toggle {
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-sidebar);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  transition: box-shadow 0.2s;
+}
+
+#theme-toggle:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+#theme-toggle {
+  perspective: 200px;
+}
+
+#theme-toggle svg {
+  transition: transform 0.5s ease;
+}
+
+#theme-toggle:hover svg {
+  transform: rotateY(180deg);
+}
+
 #settings-btn {
   background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  padding: 10px 16px;
-  border-radius: 8px;
+  border: none;
+  color: var(--accent);
+  padding: 8px 12px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
-  text-align: left;
-  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
   transition: background 0.15s, color 0.15s;
 }
 
 #settings-btn:hover {
-  background: var(--hover-bg);
-  color: var(--text-primary);
-}
-
-/* ===== 管理按钮 ===== */
-#manage-btn {
-  background: transparent;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  padding: 10px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  width: 100%;
-  text-align: center;
-}
-
-#manage-btn:hover {
-  background: var(--accent);
-  color: #fff;
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--accent-hover);
 }
 
 /* ===== 批量操作栏 ===== */
