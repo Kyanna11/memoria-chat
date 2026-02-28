@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-02-28
+
+### New Features — 记忆系统 Phase 0（Schema 升级 + 重要性评分）
+- **记忆条目三新字段** — 每条记忆新增 `importance`（1-3 重要性）、`useCount`（引用次数）、`lastReferencedAt`（最后引用时间），为后续衰减/晋升规则打地基：
+  - `importance` 三档评分：1=临时信息、2=一般事实、3=核心身份，Auto-Learn 提取时由 LLM 自动评分
+  - 旧数据零迁移成本：缺失字段通过 `validateMemoryStore` 自动补默认值（importance:2, useCount:0, lastReferencedAt:null）
+  - 所有记忆创建入口（auto-learn/前端手动添加/迁移/校验器）均包含三个新字段
+- **Auto-Learn 重要性评分** — LLM 提取记忆时可标注 `[importance:1-3]`（可选），核心身份信息自动标为高重要性，临时计划标为低重要性
+- **记忆 ID 视图含重要性星标** — `renderMemoryWithIds` 输出 ★/★★/★★★ 标记，LLM 做冲突检测时可直观看到每条记忆的重要程度
+- **Memory 配置块** — `config.json` 新增 `memory` 嵌套配置（`decayIdleDays`/`autoDecay`/`promotionUseCount`/`promotionMinDays`），为 Phase 1 衰减/晋升规则预埋
+- **UPDATE 元数据继承** — 记忆条目被 UPDATE 替换时，新条目继承旧条目的 `useCount` 和 `lastReferencedAt`，不再重置为零
+
+### Bug Fixes
+- **UPDATE importance 继承失效** — `parseAutoLearnOutput` 在 UPDATE 不带 `[importance:x]` 标签时硬编码返回 `importance:2`，导致 `applyMemoryOperations` 的 `??` 继承链永远走不到旧值。修复：UPDATE 不带标签时返回 `undefined`，让 `??` 链正确继承旧条目的 importance（来源：Codex Review）
+- **旧记忆 store 归一化后超限误拒** — `validateMemoryStore` 在归一化后检查 50KB 限制，新增的三个字段每条多 ~50 bytes，接近上限的旧 store 首次读取时可能超限触发重迁移丢数据。修复：改为检查原始输入大小（来源：Codex Review）
+
+### Backward Compatibility
+- 旧版 `memory.json`（无新字段）读取时通过 `validateMemoryStore` 自动补默认值，无需手动迁移
+- 前端不传新字段时自动填默认值，零破坏
+- `config.json` 无 `memory` 块时 `normalizeConfig` 不输出该块，保持向后兼容
+
 ## 2026-02-27
 
 ### New Features

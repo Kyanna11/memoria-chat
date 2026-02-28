@@ -88,10 +88,33 @@ describe('lib/prompts', () => {
       };
       const result = prompts.renderMemoryWithIds(store);
       expect(result).toContain('## 核心身份');
-      expect(result).toContain('[m_1000000000000] 叫小王 [2026-02-20]');
+      expect(result).toContain('[m_1000000000000] ★★ 叫小王 [2026-02-20]');
       expect(result).not.toContain('## 偏好习惯');
       expect(result).toContain('## 近期动态');
-      expect(result).toContain('[m_1000000000001] 在准备面试 [2026-02-23]');
+      expect(result).toContain('[m_1000000000001] ★★ 在准备面试 [2026-02-23]');
+    });
+
+    it('renders ★★★ for importance 3, ★ for importance 1', () => {
+      const store = {
+        version: 1,
+        identity: [{ id: 'm_1000000000000', text: '核心信息', date: '2026-02-20', source: 'user_stated', importance: 3 }],
+        preferences: [{ id: 'm_1000000000001', text: '临时偏好', date: '2026-02-21', source: 'ai_inferred', importance: 1 }],
+        events: [],
+      };
+      const result = prompts.renderMemoryWithIds(store);
+      expect(result).toContain('[m_1000000000000] ★★★ 核心信息 [2026-02-20]');
+      expect(result).toContain('[m_1000000000001] ★ 临时偏好 [2026-02-21]');
+    });
+
+    it('defaults to ★★ when importance is missing', () => {
+      const store = {
+        version: 1,
+        identity: [{ id: 'm_1000000000000', text: '无importance', date: '2026-02-20', source: 'user_stated' }],
+        preferences: [],
+        events: [],
+      };
+      const result = prompts.renderMemoryWithIds(store);
+      expect(result).toContain('[m_1000000000000] ★★ 无importance [2026-02-20]');
     });
 
     it('returns empty string for empty store', () => {

@@ -49,9 +49,9 @@ describe('lib/auto-learn', () => {
 - [events] 在准备面试`;
       const result = parseAutoLearnOutput(output);
       expect(result).toEqual([
-        { op: 'add', category: 'identity', text: '叫小王，95后' },
-        { op: 'add', category: 'preferences', text: '喜欢深色主题' },
-        { op: 'add', category: 'events', text: '在准备面试' },
+        { op: 'add', category: 'identity', text: '叫小王，95后', importance: 2 },
+        { op: 'add', category: 'preferences', text: '喜欢深色主题', importance: 2 },
+        { op: 'add', category: 'events', text: '在准备面试', importance: 2 },
       ]);
     });
 
@@ -71,14 +71,14 @@ describe('lib/auto-learn', () => {
 - [unknown] bad category
 some random text`;
       const result = parseAutoLearnOutput(output);
-      expect(result).toEqual([{ op: 'add', category: 'identity', text: 'valid item' }]);
+      expect(result).toEqual([{ op: 'add', category: 'identity', text: 'valid item', importance: 2 }]);
     });
 
     it('filters out facts exceeding 80 characters', () => {
       const longText = 'x'.repeat(81);
       const output = `- [identity] ${longText}\n- [identity] short`;
       const result = parseAutoLearnOutput(output);
-      expect(result).toEqual([{ op: 'add', category: 'identity', text: 'short' }]);
+      expect(result).toEqual([{ op: 'add', category: 'identity', text: 'short', importance: 2 }]);
     });
 
     it('keeps facts exactly at 80 characters', () => {
@@ -97,8 +97,8 @@ some random text`;
 结尾文字`;
       const result = parseAutoLearnOutput(output);
       expect(result).toHaveLength(2);
-      expect(result[0]).toEqual({ op: 'add', category: 'identity', text: '叫小王' });
-      expect(result[1]).toEqual({ op: 'add', category: 'preferences', text: '喜欢猫' });
+      expect(result[0]).toEqual({ op: 'add', category: 'identity', text: '叫小王', importance: 2 });
+      expect(result[1]).toEqual({ op: 'add', category: 'preferences', text: '喜欢猫', importance: 2 });
     });
 
     // ── 新操作格式 ──────────────────────────────────
@@ -107,8 +107,8 @@ some random text`;
       const output = '- ADD [identity] 叫小王\n- ADD [events] 在学Python';
       const result = parseAutoLearnOutput(output);
       expect(result).toEqual([
-        { op: 'add', category: 'identity', text: '叫小王' },
-        { op: 'add', category: 'events', text: '在学Python' },
+        { op: 'add', category: 'identity', text: '叫小王', importance: 2 },
+        { op: 'add', category: 'events', text: '在学Python', importance: 2 },
       ]);
     });
 
@@ -135,7 +135,7 @@ some random text`;
       const result = parseAutoLearnOutput(output);
       expect(result).toHaveLength(3);
       expect(result[0]).toEqual({ op: 'delete', targetId: 'm_1000000000000' });
-      expect(result[1]).toEqual({ op: 'add', category: 'events', text: '入职了Google' });
+      expect(result[1]).toEqual({ op: 'add', category: 'events', text: '入职了Google', importance: 2 });
       expect(result[2]).toEqual({ op: 'update', targetId: 'm_1000000000001', category: 'identity', text: '住在上海' });
     });
 
@@ -168,8 +168,8 @@ some random text`;
 - UPDATE [m_1000000000000] [preferences] updated item`;
       const result = parseAutoLearnOutput(output);
       expect(result).toHaveLength(3);
-      expect(result[0]).toEqual({ op: 'add', category: 'identity', text: 'legacy item' });
-      expect(result[1]).toEqual({ op: 'add', category: 'events', text: 'new item' });
+      expect(result[0]).toEqual({ op: 'add', category: 'identity', text: 'legacy item', importance: 2 });
+      expect(result[1]).toEqual({ op: 'add', category: 'events', text: 'new item', importance: 2 });
       expect(result[2]).toEqual({ op: 'update', targetId: 'm_1000000000000', category: 'preferences', text: 'updated item' });
     });
 
@@ -178,6 +178,37 @@ some random text`;
       const result = parseAutoLearnOutput(output);
       expect(result[0].targetId).toBe('m_1000000000000');
       expect(result[1].targetId).toBe('m_2000000000000');
+    });
+
+    // ── importance 解析 ──────────────────────────────
+
+    it('parses ADD with importance tag', () => {
+      const output = '- ADD [identity] [importance:3] 核心身份信息\n- ADD [events] [importance:1] 临时计划';
+      const result = parseAutoLearnOutput(output);
+      expect(result).toEqual([
+        { op: 'add', category: 'identity', text: '核心身份信息', importance: 3 },
+        { op: 'add', category: 'events', text: '临时计划', importance: 1 },
+      ]);
+    });
+
+    it('defaults importance to 2 when tag is absent (ADD)', () => {
+      const output = '- ADD [identity] 没有importance标签';
+      const result = parseAutoLearnOutput(output);
+      expect(result[0].importance).toBe(2);
+    });
+
+    it('parses UPDATE with importance tag', () => {
+      const output = '- UPDATE [m_1708000000000] [events] [importance:3] 已入职Google';
+      const result = parseAutoLearnOutput(output);
+      expect(result).toEqual([
+        { op: 'update', targetId: 'm_1708000000000', category: 'events', text: '已入职Google', importance: 3 },
+      ]);
+    });
+
+    it('omits importance when tag is absent (UPDATE) to allow inheritance', () => {
+      const output = '- UPDATE [m_1708000000000] [events] 无importance';
+      const result = parseAutoLearnOutput(output);
+      expect(result[0].importance).toBeUndefined();
     });
 
     it('truncates operations exceeding MAX_OPS_PER_CALL', () => {
@@ -681,6 +712,89 @@ some random text`;
 
       expect(result).toEqual({ overLimit: true });
       expect(writeMemoryStoreSpy).not.toHaveBeenCalled();
+    });
+
+    it('new entries include importance, useCount, lastReferencedAt', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({ version: 1, identity: [], preferences: [], events: [] });
+
+      await mod.applyMemoryOperations([
+        { op: 'add', category: 'identity', text: '叫小王', importance: 3 },
+      ]);
+
+      const written = writeMemoryStoreSpy.mock.calls[0][0];
+      const item = written.identity[0];
+      expect(item.importance).toBe(3);
+      expect(item.useCount).toBe(0);
+      expect(item.lastReferencedAt).toBeNull();
+    });
+
+    it('ADD defaults importance to 2 when not specified', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({ version: 1, identity: [], preferences: [], events: [] });
+
+      await mod.applyMemoryOperations([
+        { op: 'add', category: 'identity', text: '测试' },
+      ]);
+
+      const written = writeMemoryStoreSpy.mock.calls[0][0];
+      expect(written.identity[0].importance).toBe(2);
+    });
+
+    it('UPDATE inherits useCount and lastReferencedAt from old entry', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [{
+          id: 'm_1000000000000',
+          text: '住在北京',
+          date: '2026-02-10',
+          source: 'user_stated',
+          importance: 2,
+          useCount: 7,
+          lastReferencedAt: '2026-02-25T10:00:00.000Z',
+        }],
+        preferences: [],
+        events: [],
+      });
+
+      await mod.applyMemoryOperations([
+        { op: 'update', targetId: 'm_1000000000000', category: 'identity', text: '住在上海', importance: 3 },
+      ]);
+
+      const written = writeMemoryStoreSpy.mock.calls[0][0];
+      const updated = written.identity[0];
+      expect(updated.text).toBe('住在上海');
+      expect(updated.importance).toBe(3); // uses op's importance
+      expect(updated.useCount).toBe(7); // inherited from old
+      expect(updated.lastReferencedAt).toBe('2026-02-25T10:00:00.000Z'); // inherited from old
+    });
+
+    it('UPDATE without importance inherits old importance', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [],
+        preferences: [],
+        events: [{
+          id: 'm_1000000000000',
+          text: '在找工作',
+          date: '2026-02-15',
+          source: 'ai_inferred',
+          importance: 1,
+          useCount: 3,
+          lastReferencedAt: null,
+        }],
+      });
+
+      await mod.applyMemoryOperations([
+        { op: 'update', targetId: 'm_1000000000000', category: 'events', text: '已入职' },
+      ]);
+
+      const written = writeMemoryStoreSpy.mock.calls[0][0];
+      const updated = written.events[0];
+      expect(updated.importance).toBe(1); // inherited from old (no op.importance)
+      expect(updated.useCount).toBe(3); // inherited
     });
 
     it('returns { overLimit: true } when DELETE proceeds despite 50K limit', async () => {

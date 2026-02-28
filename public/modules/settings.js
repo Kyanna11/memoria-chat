@@ -151,6 +151,9 @@ function addMemoryItem() {
     text,
     date: today,
     source: "user_stated",
+    importance: 2,
+    useCount: 0,
+    lastReferencedAt: null,
   });
 
   memoryAddText.value = "";

@@ -24,7 +24,11 @@ router.put("/config", async (req, res) => {
 
   try {
     const current = await readConfig();
-    const updated = await saveConfig({ ...current, ...validated.value });
+    const merged = { ...current, ...validated.value };
+    if (validated.value.memory) {
+      merged.memory = { ...(current.memory || {}), ...validated.value.memory };
+    }
+    const updated = await saveConfig(merged);
     res.json({ ok: true, config: updated });
   } catch (err) {
     console.error("[config] error:", err);

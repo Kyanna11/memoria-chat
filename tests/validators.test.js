@@ -221,6 +221,91 @@ describe('validateMemoryStore', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('updatedAt');
   });
+
+  // --- importance ---
+  it('defaults importance to 2 when missing', () => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem()] }));
+    expect(result.ok).toBe(true);
+    expect(result.value.identity[0].importance).toBe(2);
+  });
+
+  it.each([1, 2, 3])('accepts valid importance value: %p', (importance) => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem({ importance })] }));
+    expect(result.ok).toBe(true);
+    expect(result.value.identity[0].importance).toBe(importance);
+  });
+
+  it.each([0, 4, -1])('returns error for importance out of range: %p', (importance) => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem({ importance })] }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('importance');
+  });
+
+  it('returns error for non-integer importance', () => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem({ importance: 1.5 })] }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('importance');
+  });
+
+  it('returns error for non-number importance', () => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem({ importance: '2' })] }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('importance');
+  });
+
+  // --- useCount ---
+  it('defaults useCount to 0 when missing', () => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem()] }));
+    expect(result.ok).toBe(true);
+    expect(result.value.identity[0].useCount).toBe(0);
+  });
+
+  it.each([0, 5, 100])('accepts valid useCount: %p', (useCount) => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem({ useCount })] }));
+    expect(result.ok).toBe(true);
+    expect(result.value.identity[0].useCount).toBe(useCount);
+  });
+
+  it('returns error for negative useCount', () => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem({ useCount: -1 })] }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('useCount');
+  });
+
+  it('returns error for non-integer useCount', () => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem({ useCount: 1.5 })] }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('useCount');
+  });
+
+  // --- lastReferencedAt ---
+  it('defaults lastReferencedAt to null when missing', () => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem()] }));
+    expect(result.ok).toBe(true);
+    expect(result.value.identity[0].lastReferencedAt).toBeNull();
+  });
+
+  it('accepts null lastReferencedAt', () => {
+    const result = validateMemoryStore(makeStore({ identity: [makeItem({ lastReferencedAt: null })] }));
+    expect(result.ok).toBe(true);
+    expect(result.value.identity[0].lastReferencedAt).toBeNull();
+  });
+
+  it('accepts valid ISO lastReferencedAt and normalizes it', () => {
+    const result = validateMemoryStore(makeStore({
+      identity: [makeItem({ lastReferencedAt: '2026-02-27T10:00:00.000Z' })],
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.value.identity[0].lastReferencedAt).toBe('2026-02-27T10:00:00.000Z');
+  });
+
+  it('returns error for invalid lastReferencedAt', () => {
+    const result = validateMemoryStore(makeStore({
+      identity: [makeItem({ lastReferencedAt: 'not a date' })],
+    }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('lastReferencedAt');
+  });
 });
 
 describe('validateConfigPatch', () => {
@@ -298,6 +383,77 @@ describe('validateConfigPatch', () => {
     expect(validateConfigPatch({})).toEqual({
       ok: true,
       value: {},
+    });
+  });
+
+  // --- memory config block ---
+  it('accepts valid memory config block', () => {
+    const result = validateConfigPatch({
+      memory: { decayIdleDays: 30, autoDecay: true, promotionUseCount: 5, promotionMinDays: 14 },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.value.memory).toEqual({
+      decayIdleDays: 30,
+      autoDecay: true,
+      promotionUseCount: 5,
+      promotionMinDays: 14,
+    });
+  });
+
+  it('accepts partial memory config block', () => {
+    const result = validateConfigPatch({ memory: { autoDecay: false } });
+    expect(result.ok).toBe(true);
+    expect(result.value.memory).toEqual({ autoDecay: false });
+  });
+
+  it('returns error when memory is not an object', () => {
+    expect(validateConfigPatch({ memory: 'bad' })).toEqual({
+      ok: false,
+      error: '`memory` must be an object.',
+    });
+  });
+
+  it('returns error for unknown memory sub-field', () => {
+    const result = validateConfigPatch({ memory: { unknownField: 123 } });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('unknownField');
+  });
+
+  it('returns error when decayIdleDays is out of range', () => {
+    expect(validateConfigPatch({ memory: { decayIdleDays: 0 } }).ok).toBe(false);
+    expect(validateConfigPatch({ memory: { decayIdleDays: 366 } }).ok).toBe(false);
+  });
+
+  it('returns error when promotionUseCount is out of range', () => {
+    expect(validateConfigPatch({ memory: { promotionUseCount: 0 } }).ok).toBe(false);
+    expect(validateConfigPatch({ memory: { promotionUseCount: 101 } }).ok).toBe(false);
+  });
+
+  it('returns error when promotionMinDays is out of range', () => {
+    expect(validateConfigPatch({ memory: { promotionMinDays: 0 } }).ok).toBe(false);
+    expect(validateConfigPatch({ memory: { promotionMinDays: 366 } }).ok).toBe(false);
+  });
+
+  it('returns error when autoDecay is not boolean', () => {
+    expect(validateConfigPatch({ memory: { autoDecay: 'yes' } }).ok).toBe(false);
+  });
+
+  it('accepts empty memory object (no fields to update)', () => {
+    const result = validateConfigPatch({ memory: {} });
+    expect(result.ok).toBe(true);
+    // empty memory block → no memory key in value
+    expect(result.value.memory).toBeUndefined();
+  });
+
+  it('accepts boundary values for memory config fields', () => {
+    const result = validateConfigPatch({
+      memory: { decayIdleDays: 1, promotionUseCount: 100, promotionMinDays: 365 },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.value.memory).toEqual({
+      decayIdleDays: 1,
+      promotionUseCount: 100,
+      promotionMinDays: 365,
     });
   });
 });
