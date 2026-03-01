@@ -2361,26 +2361,137 @@ body {
   }
 }
 
-/* ===== Auto-learn toast ===== */
-.learn-toast {
+/* ===== Auto-learn card ===== */
+.learn-card {
   position: fixed;
   bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(16, 163, 127, 0.15);
+  background: rgba(16, 163, 127, 0.12);
   border: 1px solid var(--accent);
-  color: var(--accent);
-  padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: 12px;
   font-size: 13px;
   z-index: 50;
+  min-width: 260px;
+  max-width: 420px;
   animation: slideUp 0.3s ease-out;
+  overflow: hidden;
+}
+
+.learn-card.fade-out {
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+.learn-card-header {
+  padding: 8px 14px;
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+}
+
+.learn-card-details {
+  padding: 0 14px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.learn-card.collapsed .learn-card-details,
+.learn-card.collapsed .learn-card-actions {
+  display: none;
+}
+
+.learn-op {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+  line-height: 1.5;
+}
+
+.learn-op-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.learn-op-add .learn-op-icon { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.learn-op-update .learn-op-icon { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.learn-op-delete .learn-op-icon { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+.learn-op-label {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.learn-op-add .learn-op-label { color: #10b981; }
+.learn-op-update .learn-op-label { color: #f59e0b; }
+.learn-op-delete .learn-op-label { color: #ef4444; }
+
+.learn-op-cat {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.learn-op-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.learn-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 6px 14px 8px;
+}
+
+.learn-undo-btn {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 3px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.learn-undo-btn:hover:not(:disabled) {
+  background: rgba(16, 163, 127, 0.15);
+}
+
+.learn-undo-btn:disabled {
+  opacity: 0.5;
   cursor: default;
 }
 
-.learn-toast.fade-out {
-  opacity: 0;
-  transition: opacity 0.5s;
+.learn-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #aaa);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.learn-close-btn:hover {
+  color: var(--text);
 }
 
 @keyframes slideUp {

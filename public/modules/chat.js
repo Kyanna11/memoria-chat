@@ -1,7 +1,7 @@
 import { state, getCurrentConv, messagesEl, inputEl, sendBtn } from "./state.js";
 import { apiFetch, showToast, readErrorMessage, renderMarkdown, formatMetaTime } from "./api.js";
 import { saveConversations, createConversation, renderChatList } from "./conversations.js";
-import { renderMessages, scrollToBottom, startStreamFollow, stopStreamFollow, isNearBottom, createMsgToolbar, getMessageText, appendMemoryIndicator } from "./render.js";
+import { renderMessages, scrollToBottom, startStreamFollow, stopStreamFollow, isNearBottom, createMsgToolbar, getMessageText, appendMemoryIndicator, CATEGORY_LABELS } from "./render.js";
 import { renderImagePreview } from "./images.js";
 import { clearPendingDocument, renderDocumentPreview } from "./files.js";
 
@@ -70,7 +70,7 @@ export async function triggerAutoLearn(conv) {
       console.info("Auto-learn skipped:", data.skipped);
     }
     if (data.learned && data.learned.length > 0) {
-      showLearnToast(data.learned);
+      showLearnCard(data.learned);
     }
     if (data.capacityWarning) {
       showToast("记忆存储已接近上限，建议在设置中清理旧记忆", "warning");
@@ -80,15 +80,126 @@ export async function triggerAutoLearn(conv) {
   }
 }
 
-function showLearnToast(facts) {
-  const toast = document.createElement("div");
-  toast.className = "learn-toast";
-  toast.textContent = `\uD83E\uDDE0 记住了 ${facts.length} 条新信息`;
-  toast.title = facts.join("\n");
-  document.body.appendChild(toast);
+let _activeLearnCard = null;
+
+const OP_ICONS = { add: "+", update: "~", delete: "−" };
+const OP_LABELS = { add: "新增", update: "更新", delete: "删除" };
+
+function showLearnCard(ops) {
+  if (_activeLearnCard) { _activeLearnCard.remove(); _activeLearnCard = null; }
+
+  const card = document.createElement("div");
+  card.className = "learn-card";
+
+  // header
+  const header = document.createElement("div");
+  header.className = "learn-card-header";
+  let addUpdateCount = 0, deleteCount = 0;
+  const undoableIds = [];
+  for (const o of ops) {
+    if (o.op === "add" || o.op === "update") {
+      addUpdateCount++;
+      if (o.id) undoableIds.push(o.id);
+    } else if (o.op === "delete") {
+      deleteCount++;
+    }
+  }
+  const parts = [];
+  if (addUpdateCount > 0) parts.push(`记住了 ${addUpdateCount} 条`);
+  if (deleteCount > 0) parts.push(`移除了 ${deleteCount} 条`);
+  header.textContent = `\uD83E\uDDE0 ${parts.join("，")}`;
+  header.addEventListener("click", () => card.classList.toggle("collapsed"));
+  card.appendChild(header);
+
+  // details
+  const details = document.createElement("div");
+  details.className = "learn-card-details";
+  const detailsFrag = document.createDocumentFragment();
+  for (const op of ops) {
+    const row = document.createElement("div");
+    row.className = `learn-op learn-op-${op.op}`;
+    const icon = document.createElement("span");
+    icon.className = "learn-op-icon";
+    icon.textContent = OP_ICONS[op.op] || "?";
+    row.appendChild(icon);
+    const label = document.createElement("span");
+    label.className = "learn-op-label";
+    label.textContent = OP_LABELS[op.op] || op.op;
+    row.appendChild(label);
+    if (op.category) {
+      const cat = document.createElement("span");
+      cat.className = "learn-op-cat";
+      cat.textContent = CATEGORY_LABELS[op.category] || op.category;
+      row.appendChild(cat);
+    }
+    if (op.text) {
+      const text = document.createElement("span");
+      text.className = "learn-op-text";
+      text.textContent = op.text;
+      row.appendChild(text);
+    }
+    if (op.op === "delete" && op.oldId) {
+      const idSpan = document.createElement("span");
+      idSpan.className = "learn-op-text";
+      idSpan.textContent = op.oldId;
+      row.appendChild(idSpan);
+    }
+    detailsFrag.appendChild(row);
+  }
+  details.appendChild(detailsFrag);
+  card.appendChild(details);
+  const actions = document.createElement("div");
+  actions.className = "learn-card-actions";
+
+  if (undoableIds.length > 0) {
+    const undoBtn = document.createElement("button");
+    undoBtn.className = "learn-undo-btn";
+    undoBtn.textContent = "撤销";
+    undoBtn.addEventListener("click", async () => {
+      undoBtn.disabled = true;
+      undoBtn.textContent = "撤销中...";
+      try {
+        const res = await apiFetch("/api/memory/auto-learn/undo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: undoableIds }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          header.textContent = `\u2705 已撤销 ${data.removed} 条`;
+          details.remove();
+          actions.remove();
+          setTimeout(() => {
+            card.classList.add("fade-out");
+            setTimeout(() => { card.remove(); _activeLearnCard = null; }, 500);
+          }, 2000);
+        } else {
+          undoBtn.textContent = "撤销失败";
+          undoBtn.disabled = false;
+        }
+      } catch {
+        undoBtn.textContent = "撤销失败";
+        undoBtn.disabled = false;
+      }
+    });
+    actions.appendChild(undoBtn);
+  }
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "learn-close-btn";
+  closeBtn.textContent = "\u00D7";
+  closeBtn.addEventListener("click", () => { card.remove(); _activeLearnCard = null; });
+  actions.appendChild(closeBtn);
+
+  card.appendChild(actions);
+  document.body.appendChild(card);
+  _activeLearnCard = card;
+
+  // 3 秒后自动折叠
   setTimeout(() => {
-    toast.classList.add("fade-out");
-    setTimeout(() => toast.remove(), 500);
+    if (card.isConnected && !card.classList.contains("collapsed")) {
+      card.classList.add("collapsed");
+    }
   }, 3000);
 }
 

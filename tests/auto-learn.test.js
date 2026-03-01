@@ -674,7 +674,7 @@ some random text`;
       expect(written.identity[0].text).toBe('good');
     });
 
-    it('returns { overLimit: false } for normal operations', async () => {
+    it('returns { overLimit: false, appliedOps } for normal operations', async () => {
       const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
       readMemoryStoreSpy.mockResolvedValue({ version: 1, identity: [], preferences: [], events: [] });
 
@@ -682,16 +682,21 @@ some random text`;
         { op: 'add', category: 'identity', text: '叫小王' },
       ]);
 
-      expect(result).toEqual({ overLimit: false });
+      expect(result.overLimit).toBe(false);
+      expect(result.appliedOps).toHaveLength(1);
+      expect(result.appliedOps[0].op).toBe('add');
+      expect(result.appliedOps[0].text).toBe('叫小王');
+      expect(result.appliedOps[0].category).toBe('identity');
+      expect(result.appliedOps[0].id).toMatch(/^m_\d+/);
     });
 
-    it('returns { overLimit: false } for empty operations', async () => {
+    it('returns { overLimit: false, appliedOps: [] } for empty operations', async () => {
       const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
       const result = await mod.applyMemoryOperations([]);
-      expect(result).toEqual({ overLimit: false });
+      expect(result).toEqual({ overLimit: false, appliedOps: [] });
     });
 
-    it('returns { overLimit: true } when pure ADDs are skipped due to 50K limit', async () => {
+    it('returns { overLimit: true, appliedOps: [] } when pure ADDs are skipped due to 50K limit', async () => {
       const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
       const bigStore = {
         version: 1,
@@ -710,7 +715,7 @@ some random text`;
         { op: 'add', category: 'identity', text: 'should not be written' },
       ]);
 
-      expect(result).toEqual({ overLimit: true });
+      expect(result).toEqual({ overLimit: true, appliedOps: [] });
       expect(writeMemoryStoreSpy).not.toHaveBeenCalled();
     });
 
@@ -797,6 +802,131 @@ some random text`;
       expect(updated.useCount).toBe(3); // inherited
     });
 
+    // ── appliedOps 返回值 ──────────────────────────────
+
+    it('appliedOps includes ADD with generated id', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({ version: 1, identity: [], preferences: [], events: [] });
+
+      const result = await mod.applyMemoryOperations([
+        { op: 'add', category: 'events', text: '在学Python', importance: 1 },
+      ]);
+
+      expect(result.appliedOps).toHaveLength(1);
+      const applied = result.appliedOps[0];
+      expect(applied.op).toBe('add');
+      expect(applied.id).toMatch(/^m_\d+/);
+      expect(applied.category).toBe('events');
+      expect(applied.text).toBe('在学Python');
+      expect(applied.importance).toBe(1);
+      expect(applied.oldId).toBeUndefined();
+    });
+
+    it('appliedOps includes UPDATE with id and oldId', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [{ id: 'm_1000000000000', text: '住在北京', date: '2026-01-01', source: 'user_stated', importance: 2 }],
+        preferences: [],
+        events: [],
+      });
+
+      const result = await mod.applyMemoryOperations([
+        { op: 'update', targetId: 'm_1000000000000', category: 'identity', text: '住在上海' },
+      ]);
+
+      expect(result.appliedOps).toHaveLength(1);
+      const applied = result.appliedOps[0];
+      expect(applied.op).toBe('update');
+      expect(applied.id).toMatch(/^m_\d+/);
+      expect(applied.oldId).toBe('m_1000000000000');
+      expect(applied.text).toBe('住在上海');
+    });
+
+    it('appliedOps includes DELETE with oldId for existing entries', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [],
+        preferences: [],
+        events: [{ id: 'm_1000000000000', text: '在找工作', date: '2026-02-15', source: 'ai_inferred', importance: 2 }],
+      });
+
+      const result = await mod.applyMemoryOperations([
+        { op: 'delete', targetId: 'm_1000000000000' },
+      ]);
+
+      expect(result.appliedOps).toHaveLength(1);
+      expect(result.appliedOps[0]).toEqual({ op: 'delete', oldId: 'm_1000000000000' });
+    });
+
+    it('appliedOps excludes DELETE for non-existent IDs', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({ version: 1, identity: [], preferences: [], events: [] });
+
+      const result = await mod.applyMemoryOperations([
+        { op: 'delete', targetId: 'm_9999999999999' },
+        { op: 'add', category: 'identity', text: '叫小王' },
+      ]);
+
+      // DELETE for non-existent should not appear in appliedOps
+      expect(result.appliedOps).toHaveLength(1);
+      expect(result.appliedOps[0].op).toBe('add');
+    });
+
+    it('appliedOps excludes ADDs skipped due to overLimit', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      const bigStore = {
+        version: 1,
+        identity: Array.from({ length: 800 }, (_, i) => ({
+          id: `m_${1000000000000 + i}`,
+          text: 'x'.repeat(60),
+          date: '2026-01-01',
+          source: 'user_stated',
+        })),
+        preferences: [],
+        events: [],
+      };
+      readMemoryStoreSpy.mockResolvedValue(bigStore);
+
+      const result = await mod.applyMemoryOperations([
+        { op: 'update', targetId: 'm_1000000000000', category: 'identity', text: 'updated' },
+        { op: 'add', category: 'events', text: 'should be skipped' },
+      ]);
+
+      // Only the UPDATE should appear in appliedOps, ADD was skipped
+      expect(result.appliedOps).toHaveLength(1);
+      expect(result.appliedOps[0].op).toBe('update');
+    });
+
+    it('appliedOps includes mixed ADD/UPDATE/DELETE correctly', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [{ id: 'm_1000000000000', text: '住在北京', date: '2026-02-10', source: 'user_stated', importance: 2 }],
+        preferences: [],
+        events: [{ id: 'm_1000000000001', text: '在找工作', date: '2026-02-15', source: 'ai_inferred', importance: 1 }],
+      });
+
+      const result = await mod.applyMemoryOperations([
+        { op: 'update', targetId: 'm_1000000000000', category: 'identity', text: '住在上海' },
+        { op: 'delete', targetId: 'm_1000000000001' },
+        { op: 'add', category: 'events', text: '入职了Google', importance: 3 },
+      ]);
+
+      expect(result.appliedOps).toHaveLength(3);
+      // DELETE comes first in appliedOps (processed before ADD/UPDATE loop)
+      const deleteOp = result.appliedOps.find(o => o.op === 'delete');
+      const updateOp = result.appliedOps.find(o => o.op === 'update');
+      const addOp = result.appliedOps.find(o => o.op === 'add');
+
+      expect(deleteOp).toEqual({ op: 'delete', oldId: 'm_1000000000001' });
+      expect(updateOp.oldId).toBe('m_1000000000000');
+      expect(updateOp.text).toBe('住在上海');
+      expect(addOp.text).toBe('入职了Google');
+      expect(addOp.importance).toBe(3);
+    });
+
     it('returns { overLimit: true } when DELETE proceeds despite 50K limit', async () => {
       const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
       const bigStore = {
@@ -816,7 +946,9 @@ some random text`;
         { op: 'delete', targetId: 'm_1000000000000' },
       ]);
 
-      expect(result).toEqual({ overLimit: true });
+      expect(result.overLimit).toBe(true);
+      expect(result.appliedOps).toHaveLength(1);
+      expect(result.appliedOps[0]).toEqual({ op: 'delete', oldId: 'm_1000000000000' });
       expect(writeMemoryStoreSpy).toHaveBeenCalledTimes(1);
     });
   });

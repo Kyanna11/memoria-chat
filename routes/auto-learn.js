@@ -1,6 +1,6 @@
 const router = require("express").Router();
 const { getClientForModel, formatProviderError } = require("../lib/clients");
-const { readMemoryStore, renderMemoryWithIds } = require("../lib/prompts");
+const { readMemoryStore, renderMemoryWithIds, writeMemoryStore } = require("../lib/prompts");
 const { isPlainObject } = require("../lib/config");
 const { isValidConvId } = require("../lib/validators");
 const {
@@ -9,6 +9,7 @@ const {
   tryAcquireCooldown,
   parseAutoLearnOutput,
   applyMemoryOperations,
+  withMemoryLock,
 } = require("../lib/auto-learn");
 
 router.post("/memory/auto-learn", async (req, res) => {
@@ -119,22 +120,54 @@ router.post("/memory/auto-learn", async (req, res) => {
 
     const result = await applyMemoryOperations(entries);
 
-    const adds = entries.filter((e) => e.op === "add");
-    const updates = entries.filter((e) => e.op === "update");
-    const deletes = entries.filter((e) => e.op === "delete");
-    console.log(`Auto-learn: +${adds.length} add, ~${updates.length} update, -${deletes.length} delete`);
+    const applied = result?.appliedOps || [];
+    let addCount = 0, updateCount = 0, deleteCount = 0;
+    for (const e of applied) {
+      if (e.op === "add") addCount++;
+      else if (e.op === "update") updateCount++;
+      else if (e.op === "delete") deleteCount++;
+    }
+    console.log(`Auto-learn: +${addCount} add, ~${updateCount} update, -${deleteCount} delete`);
 
-    const payload = {
-      learned: entries.map((e) => {
-        if (e.op === "delete") return `- DELETE [${e.targetId}]`;
-        if (e.op === "update") return `- UPDATE [${e.targetId}] → [${e.category}] ${e.text}`;
-        return `- [${e.category}] ${e.text}`;
-      }),
-    };
+    const payload = { learned: applied };
     if (result?.overLimit) payload.capacityWarning = true;
     return res.json(payload);
   } catch (err) {
     console.error("Auto-learn error:", err.message);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/memory/auto-learn/undo", async (req, res) => {
+  const ids = req.body?.ids;
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 20) {
+    return res.status(400).json({ error: "ids must be a non-empty array (max 20)" });
+  }
+  const idPattern = /^m_\d{10,}$/;
+  for (const id of ids) {
+    if (typeof id !== "string" || !idPattern.test(id)) {
+      return res.status(400).json({ error: `invalid memory id: ${id}` });
+    }
+  }
+
+  try {
+    const idsToRemove = new Set(ids);
+    const removed = await withMemoryLock(async () => {
+      const store = await readMemoryStore();
+      let count = 0;
+      for (const cat of ["identity", "preferences", "events"]) {
+        const before = store[cat].length;
+        store[cat] = store[cat].filter((item) => !idsToRemove.has(item.id));
+        count += before - store[cat].length;
+      }
+      if (count > 0) {
+        await writeMemoryStore(store);
+      }
+      return count;
+    });
+    return res.json({ removed });
+  } catch (err) {
+    console.error("Auto-learn undo error:", err.message);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
