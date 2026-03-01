@@ -338,6 +338,7 @@ export async function streamAssistantReply(conv, outboundUserContent = null) {
 
   let metaInfo = null;
   let reasoningContent = "";
+  let inactivityTimer;
 
   try {
     const maxCtx = state.currentConfig?.context_window ?? 50;
@@ -361,7 +362,7 @@ export async function streamAssistantReply(conv, outboundUserContent = null) {
 
     // 无活动超时：60 秒内没收到任何数据就 abort
     const INACTIVITY_TIMEOUT = 60_000;
-    let inactivityTimer = setTimeout(() => chatAbort.abort(), INACTIVITY_TIMEOUT);
+    inactivityTimer = setTimeout(() => chatAbort.abort(), INACTIVITY_TIMEOUT);
     function resetInactivityTimer() {
       clearTimeout(inactivityTimer);
       inactivityTimer = setTimeout(() => chatAbort.abort(), INACTIVITY_TIMEOUT);
@@ -491,6 +492,7 @@ export async function streamAssistantReply(conv, outboundUserContent = null) {
     }
     // 注意：不再调 showThinkingStatus / scrollToBottom，收尾阶段统一处理
   } catch (err) {
+    clearTimeout(inactivityTimer);
     // 用户主动切换对话导致的 abort，静默保存已有内容
     if (state.streamAbortedBySwitch) {
       state.streamAbortedBySwitch = false;

@@ -29,6 +29,24 @@
 ### Improvements
 - **记忆模块内部重构** — 消除三处重复代码：渲染逻辑统一为 `renderCategories()`、排序优化减少重复计算、引用计数更新封装为独立函数
 
+### Bug Fixes（审查债务清理 — 9 项）
+- **记忆引用开关不实时更新** — 设置面板切换"显示记忆引用"后，已渲染的消息不变。修复：用 CSS class 切换即时隐藏/显示，无需重新渲染
+- **索引更新失败静默吞错** — 对话增删改后索引更新失败完全无日志，排查困难。修复：4 处 catch 补 console.warn
+- **16 位对话 ID 排序不准** — 对话 ID 超过 JavaScript 安全整数上限（15 位），`Number()` 转换丢失精度导致排序错乱。修复：改用长度优先 + 字典序比较
+- **对话文件并发写入无锁** — 连续快速发消息时多个写操作竞态覆盖。修复：新增 per-conversation 互斥锁
+- **图片 MIME 白名单过宽** — 对话校验接受任意 `data:image/*`，绕过上传端点的格式限制。修复：收紧为 PNG/JPEG/GIF/WebP 四种
+- **联网搜索无超时** — Serper API 无响应时请求永久挂起。修复：10 秒 AbortController 超时
+- **Token 比较泄漏长度** — `timingSafeEqual` 要求两端等长，短路返回暴露 token 长度。修复：改用 HMAC 比较（固定 32 字节 digest）
+- **批量删图片可能爆文件描述符** — 大量图片同时 unlink 触发 EMFILE。修复：分批 20 个处理
+- **流式回复超时计时器泄漏** — 流式出错时 catch 块无法访问 try 内声明的 timer 变量（let 块级作用域），`clearTimeout` 不执行。修复：提升变量声明到 try 外部
+
+### Tests（基础设施函数测试 — 5 组）
+- `extractJsonFromLLM` — LLM 输出 JSON 解析器（代码块/裸 JSON/嵌套括号/无 JSON 异常），8 个用例
+- `atomicWrite` — 原子文件写入（正常读写/无残留临时文件/覆盖），3 个用例
+- `createMutex` — Promise 互斥锁（FIFO 顺序/抛错不死锁/返回值传递），3 个用例
+- `tryAcquireCooldown` — 冷却期门卫（首次通过/冷却内拒绝/独立 convId/非字符串拒绝），4 个用例
+- `readCookieToken` — Cookie 解析（单 cookie/多 cookie/URL 编码/异常编码/缺失），6 个用例
+
 ### Bug Fixes
 - **validateMessages 丢弃 meta 和 reasoning** — 对话保存时校验逻辑只保留 `{role, content}`，导致 token 用量、模型名、时间戳和思考链数据被静默丢弃。修复：校验时保留 `meta`（对象类型）和 `reasoning`（字符串类型）
 - **无 token 数据时显示"0 tokens"** — 不返回 usage 的模型提供商（如部分火山引擎模型），meta 事件仍发送 0 值 token 计数。修复：仅在有实际用量数据时才包含 token 字段

@@ -12,12 +12,13 @@ function loadAuthWithAdminToken(mode, token) {
   return require('../lib/auth');
 }
 
-function createReq({ authorization, ip = '127.0.0.1' } = {}) {
+function createReq({ authorization, cookie, ip = '127.0.0.1' } = {}) {
   return {
     ip,
     get: (header) => {
       if (!header) return undefined;
       if (header.toLowerCase() === 'authorization') return authorization;
+      if (header.toLowerCase() === 'cookie') return cookie;
       return undefined;
     },
   };
@@ -191,5 +192,43 @@ describe('authMiddleware', () => {
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(403);
     });
+  });
+});
+
+describe('readCookieToken', () => {
+  it('parses api_token=sk-xxx', () => {
+    const { readCookieToken } = loadAuthWithAdminToken('delete');
+    const req = createReq({ cookie: 'api_token=sk-xxx' });
+    expect(readCookieToken(req)).toBe('sk-xxx');
+  });
+
+  it('parses api_token from multiple cookies', () => {
+    const { readCookieToken } = loadAuthWithAdminToken('delete');
+    const req = createReq({ cookie: 'session=1; api_token=sk-xxx; path=/' });
+    expect(readCookieToken(req)).toBe('sk-xxx');
+  });
+
+  it('decodes URL-encoded value', () => {
+    const { readCookieToken } = loadAuthWithAdminToken('delete');
+    const req = createReq({ cookie: 'api_token=sk%2Btest' });
+    expect(readCookieToken(req)).toBe('sk+test');
+  });
+
+  it('returns empty string for invalid URL encoding', () => {
+    const { readCookieToken } = loadAuthWithAdminToken('delete');
+    const req = createReq({ cookie: 'api_token=%ZZ' });
+    expect(readCookieToken(req)).toBe('');
+  });
+
+  it('returns empty string when no cookie header', () => {
+    const { readCookieToken } = loadAuthWithAdminToken('delete');
+    const req = createReq({});
+    expect(readCookieToken(req)).toBe('');
+  });
+
+  it('returns empty string when api_token is absent', () => {
+    const { readCookieToken } = loadAuthWithAdminToken('delete');
+    const req = createReq({ cookie: 'session=abc; other=123' });
+    expect(readCookieToken(req)).toBe('');
   });
 });

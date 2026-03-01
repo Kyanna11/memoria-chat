@@ -211,8 +211,13 @@ export async function loadConfigPanel() {
 
 // 记忆引用开关（localStorage，实时生效）
 showMemoryRefsCheckbox.checked = localStorage.getItem("showMemoryRefs") !== "false";
+// 页面加载时根据初始状态设置 class
+if (!showMemoryRefsCheckbox.checked) {
+  document.body.classList.add("hide-memory-refs");
+}
 showMemoryRefsCheckbox.addEventListener("change", () => {
   localStorage.setItem("showMemoryRefs", showMemoryRefsCheckbox.checked ? "true" : "false");
+  document.body.classList.toggle("hide-memory-refs", !showMemoryRefsCheckbox.checked);
 });
 
 // 打开设置

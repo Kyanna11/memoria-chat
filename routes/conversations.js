@@ -11,6 +11,7 @@ const {
   updateIndexEntry,
   removeIndexEntry,
   removeIndexEntries,
+  withConvLock,
 } = require("../lib/config");
 const { validateConversation } = require("../lib/validators");
 const { getClientForModel } = require("../lib/clients");
@@ -40,17 +41,19 @@ function extractImageFilenames(messages) {
   return filenames;
 }
 
-/** 尽力删除图片文件，记录失败的文件名 */
+/** 尽力删除图片文件，分批处理防 EMFILE */
 async function cleanupImages(filenames) {
-  const results = await Promise.allSettled(
-    filenames.map((f) => fsp.unlink(path.join(IMAGES_DIR, f)))
-  );
+  const BATCH = 20;
   const failed = [];
-  results.forEach((r, i) => {
-    if (r.status === "rejected") {
-      failed.push(filenames[i]);
-    }
-  });
+  for (let i = 0; i < filenames.length; i += BATCH) {
+    const batch = filenames.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map((f) => fsp.unlink(path.join(IMAGES_DIR, f)))
+    );
+    results.forEach((r, j) => {
+      if (r.status === "rejected") failed.push(batch[j]);
+    });
+  }
   if (failed.length > 0) {
     console.warn(`[cleanupImages] Failed to delete ${failed.length} file(s):`, failed);
   }
@@ -64,7 +67,7 @@ router.get("/conversations", async (req, res) => {
     }
     const list = Object.entries(index)
       .map(([id, meta]) => ({ id, ...meta }))
-      .sort((a, b) => Number(b.id) - Number(a.id));
+      .sort((a, b) => b.id.length - a.id.length || b.id.localeCompare(a.id));
     res.json(list);
   } catch (err) {
     console.error("[conversations] list error:", err);
@@ -126,7 +129,7 @@ router.post("/conversations/search", async (req, res) => {
       }
     }
 
-    results.sort((a, b) => Number(b.id) - Number(a.id));
+    results.sort((a, b) => b.id.length - a.id.length || b.id.localeCompare(a.id));
     res.json(results);
   } catch (err) {
     console.error("[conversations] search error:", err);
@@ -163,7 +166,7 @@ router.post("/conversations/batch-delete", async (req, res) => {
       else results.failed++;
     }
   }
-  await removeIndexEntries(ids).catch(() => {});
+  await removeIndexEntries(ids).catch(err => console.warn("[index]", err.message));
   if (allImages.length > 0) cleanupImages(allImages).catch(() => {});
   res.json({ ok: true, ...results });
 });
@@ -193,12 +196,14 @@ router.put("/conversations/:id", async (req, res) => {
     return res.status(400).json({ error: validated.error });
   }
   try {
-    const toSave = {
-      ...validated.value,
-      updatedAt: new Date().toISOString(),
-    };
-    await atomicWrite(filePath, JSON.stringify(toSave));
-    await updateIndexEntry(validated.value.id, validated.value.title, validated.value.messages.length).catch(() => {});
+    await withConvLock(id, async () => {
+      const toSave = {
+        ...validated.value,
+        updatedAt: new Date().toISOString(),
+      };
+      await atomicWrite(filePath, JSON.stringify(toSave));
+      await updateIndexEntry(validated.value.id, validated.value.title, validated.value.messages.length).catch(err => console.warn("[index]", err.message));
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error("[conversations] save error:", err);
@@ -217,7 +222,7 @@ router.delete("/conversations/:id", async (req, res) => {
       images = extractImageFilenames(data.messages);
     } catch { /* 文件不存在或损坏，跳过图片清理 */ }
     await fsp.unlink(filePath);
-    await removeIndexEntry(req.params.id).catch(() => {});
+    await removeIndexEntry(req.params.id).catch(err => console.warn("[index]", err.message));
     if (images.length > 0) cleanupImages(images).catch(() => {});
     res.json({ ok: true });
   } catch (err) {
@@ -283,12 +288,14 @@ router.post("/conversations/:id/generate-title", async (req, res) => {
     }
 
     // 重新读取最新文件，只改 title，避免覆盖期间新增的消息
-    const freshRaw = await fsp.readFile(filePath, "utf-8");
-    const freshConv = JSON.parse(freshRaw);
-    freshConv.title = title;
-    freshConv.updatedAt = new Date().toISOString();
-    await atomicWrite(filePath, JSON.stringify(freshConv));
-    await updateIndexEntry(freshConv.id, title, freshConv.messages.length).catch(() => {});
+    await withConvLock(req.params.id, async () => {
+      const freshRaw = await fsp.readFile(filePath, "utf-8");
+      const freshConv = JSON.parse(freshRaw);
+      freshConv.title = title;
+      freshConv.updatedAt = new Date().toISOString();
+      await atomicWrite(filePath, JSON.stringify(freshConv));
+      await updateIndexEntry(freshConv.id, title, freshConv.messages.length).catch(err => console.warn("[index]", err.message));
+    });
 
     res.json({ title });
   } catch (err) {

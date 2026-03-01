@@ -296,3 +296,4 @@ router.post("/conversations/merge-prompt", async (req, res) => {
 });
 
 module.exports = router;
+module.exports.extractJsonFromLLM = extractJsonFromLLM;

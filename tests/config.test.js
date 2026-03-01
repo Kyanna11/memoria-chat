@@ -8,7 +8,11 @@ vi.mock('../lib/clients', () => ({
   DEFAULT_CONFIG: { model: 'gpt-4o', temperature: 1, presence_penalty: 0, frequency_penalty: 0 },
 }));
 
-const { isPlainObject, clampNumber, normalizeConfig, getConversationPath } = require('../lib/config');
+const { isPlainObject, clampNumber, normalizeConfig, getConversationPath, atomicWrite, createMutex } = require('../lib/config');
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
+const fsp = fs.promises;
 
 const DEFAULT_CONFIG = {
   model: 'gpt-4o',
@@ -158,5 +162,81 @@ describe('getConversationPath', () => {
   it('returns null for null or undefined', () => {
     expect(getConversationPath(null)).toBeNull();
     expect(getConversationPath(undefined)).toBeNull();
+  });
+});
+
+describe('atomicWrite', () => {
+  let tmpDir;
+
+  beforeEach(async () => {
+    tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'atomicwrite-'));
+  });
+
+  afterEach(async () => {
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('writes content and reads back correctly', async () => {
+    const filePath = path.join(tmpDir, 'test.json');
+    await atomicWrite(filePath, '{"hello":"world"}');
+    const content = await fsp.readFile(filePath, 'utf-8');
+    expect(content).toBe('{"hello":"world"}');
+  });
+
+  it('leaves no .tmp files after write', async () => {
+    const filePath = path.join(tmpDir, 'test.json');
+    await atomicWrite(filePath, 'data');
+    const files = await fsp.readdir(tmpDir);
+    const tmpFiles = files.filter(f => f.endsWith('.tmp'));
+    expect(tmpFiles).toHaveLength(0);
+  });
+
+  it('overwrites existing file completely', async () => {
+    const filePath = path.join(tmpDir, 'test.json');
+    await atomicWrite(filePath, 'original content');
+    await atomicWrite(filePath, 'new content');
+    const content = await fsp.readFile(filePath, 'utf-8');
+    expect(content).toBe('new content');
+  });
+});
+
+describe('createMutex', () => {
+  it('serializes async tasks in FIFO order', async () => {
+    const withLock = createMutex();
+    const order = [];
+
+    const p1 = withLock(async () => {
+      await new Promise(r => setTimeout(r, 50));
+      order.push('first');
+    });
+    const p2 = withLock(async () => {
+      order.push('second');
+    });
+
+    await Promise.all([p1, p2]);
+    expect(order).toEqual(['first', 'second']);
+  });
+
+  it('does not deadlock when first task throws', async () => {
+    const withLock = createMutex();
+    const order = [];
+
+    const p1 = withLock(async () => {
+      order.push('first');
+      throw new Error('boom');
+    }).catch(() => {});
+
+    const p2 = withLock(async () => {
+      order.push('second');
+    });
+
+    await Promise.all([p1, p2]);
+    expect(order).toEqual(['first', 'second']);
+  });
+
+  it('passes through return value', async () => {
+    const withLock = createMutex();
+    const result = await withLock(() => 42);
+    expect(result).toBe(42);
   });
 });

@@ -2264,6 +2264,12 @@ body {
   font-size: 13px;
 }
 
+/* ===== 记忆引用开关：全局隐藏 ===== */
+.hide-memory-refs .memory-ref-badge,
+.hide-memory-refs .memory-ref-panel {
+  display: none !important;
+}
+
 /* ===== 思考链折叠块 ===== */
 .thinking-block {
   border: 1px solid var(--border);

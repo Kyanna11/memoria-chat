@@ -337,6 +337,35 @@ some random text`;
     });
   });
 
+  // ── tryAcquireCooldown ───────────────────────────────────────
+
+  describe('tryAcquireCooldown', () => {
+    it('returns true on first call for a convId', () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test', AUTO_LEARN_COOLDOWN: '180' });
+      expect(mod.tryAcquireCooldown('conv-fresh-001')).toBe(true);
+    });
+
+    it('returns false when called again within cooldown', () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test', AUTO_LEARN_COOLDOWN: '180' });
+      mod.tryAcquireCooldown('conv-cd-001');
+      expect(mod.tryAcquireCooldown('conv-cd-001')).toBe(false);
+    });
+
+    it('cools down independently per convId', () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test', AUTO_LEARN_COOLDOWN: '180' });
+      mod.tryAcquireCooldown('conv-a');
+      expect(mod.tryAcquireCooldown('conv-b')).toBe(true); // different conv, should succeed
+      expect(mod.tryAcquireCooldown('conv-a')).toBe(false); // same conv, still cooling
+    });
+
+    it('returns false for non-string convId', () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      expect(mod.tryAcquireCooldown(null)).toBe(false);
+      expect(mod.tryAcquireCooldown(undefined)).toBe(false);
+      expect(mod.tryAcquireCooldown(12345)).toBe(false);
+    });
+  });
+
   // ── constants ─────────────────────────────────────────────────
 
   describe('constants', () => {
