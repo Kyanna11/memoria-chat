@@ -41,6 +41,9 @@ const configAutoDecay = document.getElementById("config-auto-decay");
 const configDecayDays = document.getElementById("config-decay-days");
 const decayDaysVal = document.getElementById("decay-days-val");
 
+// 晋升/降级控件
+const configAutoPromotion = document.getElementById("config-auto-promotion");
+
 // 摘要压缩控件
 const configAutoCompress = document.getElementById("config-auto-compress");
 const configKeepRecent = document.getElementById("config-keep-recent");
@@ -382,6 +385,9 @@ export async function loadConfigPanel() {
     configDecayDays.value = config.memory?.decayIdleDays ?? 30;
     decayDaysVal.textContent = config.memory?.decayIdleDays ?? 30;
 
+    // 晋升/降级设置
+    configAutoPromotion.checked = config.memory?.autoPromotion ?? false;
+
     // 摘要压缩设置
     configAutoCompress.checked = config.auto_compress ?? false;
     configKeepRecent.value = config.compress_keep_recent ?? 10;
@@ -488,6 +494,7 @@ savePromptsBtn.addEventListener("click", async () => {
       compress_keep_recent: parseInt(configKeepRecent.value, 10),
       memory: {
         autoDecay: configAutoDecay.checked,
+        autoPromotion: configAutoPromotion.checked,
         decayIdleDays: parseInt(configDecayDays.value, 10),
       },
     };

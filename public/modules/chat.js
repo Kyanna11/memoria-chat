@@ -75,6 +75,12 @@ export async function triggerAutoLearn(conv) {
     if (data.decay?.decayed?.length > 0) {
       showToast(`自动清理了 ${data.decay.decayed.length} 条过期记忆`);
     }
+    if (data.promotion?.promoted?.length > 0 || data.promotion?.demoted?.length > 0) {
+      const parts = [];
+      if (data.promotion.promoted.length > 0) parts.push(`${data.promotion.promoted.length} 条记忆晋升`);
+      if (data.promotion.demoted.length > 0) parts.push(`${data.promotion.demoted.length} 条记忆降级`);
+      showToast(parts.join("，"));
+    }
     if (data.capacityWarning) {
       showToast("记忆存储已接近上限，建议在设置中清理旧记忆", "warning");
     }

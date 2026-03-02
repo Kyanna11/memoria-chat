@@ -368,6 +368,14 @@
               <input type="range" id="config-decay-days" min="7" max="180" step="1" value="30" />
               <p class="config-hint">近期动态超过此天数未被引用时触发衰减（重要性=1 自动删除，≥2 标记过期）。偏好习惯固定 90 天。</p>
             </div>
+            <p class="config-section-title">记忆晋升/降级</p>
+            <div class="config-row toggle-row">
+              <label>
+                <input type="checkbox" id="config-auto-promotion" />
+                启用自动晋升/降级
+              </label>
+              <p class="config-hint">开启后，高频引用的近期动态会自动晋升为偏好习惯，长期冷门的偏好习惯会降级为近期动态。</p>
+            </div>
             <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;" />
             <p class="config-section-title">摘要压缩</p>
             <div class="config-row toggle-row">

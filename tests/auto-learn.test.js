@@ -1226,6 +1226,180 @@ some random text`;
     });
   });
 
+  // ── performPromotionCheck ──────────────────────────────
+
+  describe('performPromotionCheck', () => {
+    const prompts = require('../lib/prompts');
+    let readMemoryStoreSpy;
+    let writeMemoryStoreSpy;
+
+    beforeEach(() => {
+      readMemoryStoreSpy = vi.spyOn(prompts, 'readMemoryStore');
+      writeMemoryStoreSpy = vi.spyOn(prompts, 'writeMemoryStore').mockResolvedValue();
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function daysAgo(n) {
+      return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    }
+
+    it('does nothing when autoPromotion is false', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      const result = await mod.performPromotionCheck({ memory: { autoPromotion: false } });
+      expect(result).toEqual({ promoted: [], demoted: [] });
+      expect(readMemoryStoreSpy).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when config is null', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      const result = await mod.performPromotionCheck(null);
+      expect(result).toEqual({ promoted: [], demoted: [] });
+    });
+
+    it('promotes events → preferences when useCount and age meet thresholds', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [],
+        preferences: [],
+        events: [
+          { id: 'm_2000000000001', text: '经常提到的话题', date: daysAgo(15), source: 'ai_inferred', importance: 2, useCount: 5, lastReferencedAt: null },
+        ],
+      });
+
+      const result = await mod.performPromotionCheck({ memory: { autoPromotion: true, promotionUseCount: 5, promotionMinDays: 14 } });
+
+      expect(result.promoted).toHaveLength(1);
+      expect(result.promoted[0]).toEqual({ id: 'm_2000000000001', text: '经常提到的话题', from: 'events', to: 'preferences' });
+      expect(result.demoted).toHaveLength(0);
+      expect(writeMemoryStoreSpy).toHaveBeenCalledTimes(1);
+      const written = writeMemoryStoreSpy.mock.calls[0][0];
+      expect(written.events).toHaveLength(0);
+      expect(written.preferences).toHaveLength(1);
+      expect(written.preferences[0].id).toBe('m_2000000000001');
+    });
+
+    it('does not promote events that do not meet thresholds', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [],
+        preferences: [],
+        events: [
+          { id: 'm_2000000000002', text: '引用不够', date: daysAgo(15), source: 'ai_inferred', importance: 2, useCount: 3, lastReferencedAt: null },
+          { id: 'm_2000000000003', text: '天数不够', date: daysAgo(7), source: 'ai_inferred', importance: 2, useCount: 5, lastReferencedAt: null },
+        ],
+      });
+
+      const result = await mod.performPromotionCheck({ memory: { autoPromotion: true, promotionUseCount: 5, promotionMinDays: 14 } });
+
+      expect(result.promoted).toHaveLength(0);
+      expect(result.demoted).toHaveLength(0);
+      expect(writeMemoryStoreSpy).not.toHaveBeenCalled();
+    });
+
+    it('promotes preferences → identity when useCount≥20, age≥60d, importance=3', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [],
+        preferences: [
+          { id: 'm_2000000000004', text: '核心身份特征', date: daysAgo(61), source: 'user_stated', importance: 3, useCount: 20, lastReferencedAt: null },
+        ],
+        events: [],
+      });
+
+      const result = await mod.performPromotionCheck({ memory: { autoPromotion: true } });
+
+      expect(result.promoted).toHaveLength(1);
+      expect(result.promoted[0]).toEqual({ id: 'm_2000000000004', text: '核心身份特征', from: 'preferences', to: 'identity' });
+      expect(writeMemoryStoreSpy).toHaveBeenCalledTimes(1);
+      const written = writeMemoryStoreSpy.mock.calls[0][0];
+      expect(written.preferences).toHaveLength(0);
+      expect(written.identity).toHaveLength(1);
+      expect(written.identity[0].id).toBe('m_2000000000004');
+    });
+
+    it('does not promote preferences → identity when importance≠3', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [],
+        preferences: [
+          { id: 'm_2000000000005', text: '高频但非核心', date: daysAgo(61), source: 'user_stated', importance: 2, useCount: 25, lastReferencedAt: null },
+        ],
+        events: [],
+      });
+
+      const result = await mod.performPromotionCheck({ memory: { autoPromotion: true } });
+
+      expect(result.promoted).toHaveLength(0);
+      // importance≠3 → stays in preferences, not demoted either (useCount=25 > 2)
+      expect(result.demoted).toHaveLength(0);
+    });
+
+    it('demotes preferences → events when idle>90d and useCount≤2', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [],
+        preferences: [
+          { id: 'm_2000000000006', text: '冷门偏好', date: daysAgo(100), source: 'ai_inferred', importance: 2, useCount: 1, lastReferencedAt: null },
+        ],
+        events: [],
+      });
+
+      const result = await mod.performPromotionCheck({ memory: { autoPromotion: true } });
+
+      expect(result.demoted).toHaveLength(1);
+      expect(result.demoted[0]).toEqual({ id: 'm_2000000000006', text: '冷门偏好', from: 'preferences', to: 'events' });
+      expect(result.promoted).toHaveLength(0);
+      expect(writeMemoryStoreSpy).toHaveBeenCalledTimes(1);
+      const written = writeMemoryStoreSpy.mock.calls[0][0];
+      expect(written.preferences).toHaveLength(0);
+      expect(written.events).toHaveLength(1);
+      expect(written.events[0].id).toBe('m_2000000000006');
+    });
+
+    it('does not demote preferences with useCount>2 or recent reference', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [],
+        preferences: [
+          { id: 'm_2000000000007', text: 'useCount高', date: daysAgo(100), source: 'ai_inferred', importance: 2, useCount: 3, lastReferencedAt: null },
+          { id: 'm_2000000000008', text: '近期引用', date: daysAgo(100), source: 'ai_inferred', importance: 2, useCount: 1, lastReferencedAt: new Date(Date.now() - 10 * 86400000).toISOString() },
+        ],
+        events: [],
+      });
+
+      const result = await mod.performPromotionCheck({ memory: { autoPromotion: true } });
+
+      expect(result.demoted).toHaveLength(0);
+      expect(result.promoted).toHaveLength(0);
+      expect(writeMemoryStoreSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not write store when no changes', async () => {
+      const mod = loadAutoLearn({ OPENAI_API_KEY: 'sk-test' });
+      readMemoryStoreSpy.mockResolvedValue({
+        version: 1,
+        identity: [{ id: 'm_2000000000009', text: '身份条目', date: daysAgo(200), source: 'user_stated', importance: 3, useCount: 10, lastReferencedAt: null }],
+        preferences: [{ id: 'm_2000000000010', text: '正常偏好', date: daysAgo(30), source: 'user_stated', importance: 2, useCount: 5, lastReferencedAt: new Date(Date.now() - 5 * 86400000).toISOString() }],
+        events: [{ id: 'm_2000000000011', text: '普通事件', date: daysAgo(5), source: 'ai_inferred', importance: 2, useCount: 1, lastReferencedAt: null }],
+      });
+
+      const result = await mod.performPromotionCheck({ memory: { autoPromotion: true, promotionUseCount: 5, promotionMinDays: 14 } });
+
+      expect(result.promoted).toHaveLength(0);
+      expect(result.demoted).toHaveLength(0);
+      expect(writeMemoryStoreSpy).not.toHaveBeenCalled();
+    });
+  });
+
   // ── deduplicateAdds (pure function) ─────────────────────
 
   describe('deduplicateAdds', () => {

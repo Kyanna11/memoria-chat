@@ -10,6 +10,7 @@ const {
   parseAutoLearnOutput,
   applyMemoryOperations,
   performDecayCheck,
+  performPromotionCheck,
   withMemoryLock,
 } = require("../lib/auto-learn");
 
@@ -115,9 +116,14 @@ router.post("/memory/auto-learn", async (req, res) => {
     const decay = await performDecayCheck(config);
     const hasDecay = decay.decayed.length > 0 || decay.staled.length > 0;
 
+    // Phase 2B: piggyback promotion check
+    const promotion = await performPromotionCheck(config);
+    const hasPromotion = promotion.promoted.length > 0 || promotion.demoted.length > 0;
+
     if (output === "NONE" || !output) {
       const payload = { learned: [] };
       if (hasDecay) payload.decay = decay;
+      if (hasPromotion) payload.promotion = promotion;
       return res.json(payload);
     }
 
@@ -126,6 +132,7 @@ router.post("/memory/auto-learn", async (req, res) => {
     if (entries.length === 0) {
       const payload = { learned: [] };
       if (hasDecay) payload.decay = decay;
+      if (hasPromotion) payload.promotion = promotion;
       return res.json(payload);
     }
 
@@ -142,11 +149,15 @@ router.post("/memory/auto-learn", async (req, res) => {
     const decaySuffix = hasDecay
       ? ` | decay: -${decay.decayed.length} deleted, ~${decay.staled.length} staled`
       : "";
-    console.log(`Auto-learn: +${addCount} add, ~${updateCount} update, -${deleteCount} delete, ≈${mergeCount} merge${decaySuffix}`);
+    const promotionSuffix = hasPromotion
+      ? ` | promotion: ↑${promotion.promoted.length} promoted, ↓${promotion.demoted.length} demoted`
+      : "";
+    console.log(`Auto-learn: +${addCount} add, ~${updateCount} update, -${deleteCount} delete, ≈${mergeCount} merge${decaySuffix}${promotionSuffix}`);
 
     const payload = { learned: applied };
     if (result?.overLimit) payload.capacityWarning = true;
     if (hasDecay) payload.decay = decay;
+    if (hasPromotion) payload.promotion = promotion;
     return res.json(payload);
   } catch (err) {
     console.error("Auto-learn error:", err.message);
