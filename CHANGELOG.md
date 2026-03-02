@@ -2,6 +2,16 @@
 
 ## 2026-03-02
 
+### Bug Fixes — P1 全量审查
+- **Windows 原子写入修复** — `atomicWrite()` 在 Windows 下先尝试 rename，EPERM 时才 unlink+retry，避免不必要的文件删除窗口
+- **对话总结 ID 类型校验** — `conversationIds` 数组元素现在严格校验为字符串格式，防止数字被隐式转换通过
+- **融合 Prompt 输入校验** — `newSystemFindings`/`newMemoryFindings` 新增字符串类型检查和 50000 字上限，防止超大 payload 烧 token
+- **剪贴板复制异常处理** — HTTP 环境或权限拒绝时不再触发全局错误提示
+- **Toast 颜色语义修正** — 新增成功（绿）和信息（蓝）两种 toast 类型，成功/信息消息不再显示为错误红色
+- **escapeHtml 统一** — 前端三份重复的 HTML 转义函数合并为 `api.js` 单一导出，消除 files.js 缺单引号转义的不一致
+- **记忆列表 data-id 转义** — `renderMemoryList` 中的 `data-id` 属性现在经过 HTML 转义，防御潜在 XSS
+- **401 认证取消提示** — 用户取消输入 ADMIN_TOKEN 后现在会显示 warning toast 而非静默失败
+
 ### New Features — 记忆反思/整合（Phase 3A）
 - **手动整合记忆** — 设置面板 → 长期记忆工具栏新增「整合记忆」按钮，一键分析近期动态，从零散事件中提炼高层模式和洞察（如"持续关注 AI 领域"），写入偏好习惯或核心身份
 - **洞察自动高评级** — 整合产出的洞察自动标记为核心重要性（★★★），获得最高注入优先级

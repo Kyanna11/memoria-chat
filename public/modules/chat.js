@@ -73,13 +73,13 @@ export async function triggerAutoLearn(conv) {
       showLearnCard(data.learned);
     }
     if (data.decay?.decayed?.length > 0) {
-      showToast(`自动清理了 ${data.decay.decayed.length} 条过期记忆`);
+      showToast(`自动清理了 ${data.decay.decayed.length} 条过期记忆`, "success");
     }
     if (data.promotion?.promoted?.length > 0 || data.promotion?.demoted?.length > 0) {
       const parts = [];
       if (data.promotion.promoted.length > 0) parts.push(`${data.promotion.promoted.length} 条记忆晋升`);
       if (data.promotion.demoted.length > 0) parts.push(`${data.promotion.demoted.length} 条记忆降级`);
-      showToast(parts.join("，"));
+      showToast(parts.join("，"), "success");
     }
     if (data.capacityWarning) {
       showToast("记忆存储已接近上限，建议在设置中清理旧记忆", "warning");
@@ -281,12 +281,12 @@ async function ensureSummary(conv, keepRecent) {
 export async function manualCompress() {
   const conv = getCurrentConv();
   if (!conv || conv.messages.length < 4) {
-    showToast("消息太少，无需压缩");
+    showToast("消息太少，无需压缩", "warning");
     return;
   }
 
   // 手动压缩：总结整个对话（全部消息）
-  showToast("正在压缩...");
+  showToast("正在压缩...", "info");
   try {
     const summary = await callCompressApi(conv.id, conv.messages);
     if (summary) {
@@ -298,9 +298,9 @@ export async function manualCompress() {
         const card = messagesEl.querySelector(".summary-card");
         if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
       });
-      showToast(`已压缩 ${summary.upToIndex} 条消息为摘要`);
+      showToast(`已压缩 ${summary.upToIndex} 条消息为摘要`, "success");
     } else {
-      showToast("没有可压缩的文本内容");
+      showToast("没有可压缩的文本内容", "warning");
     }
   } catch (err) {
     showToast("压缩失败: " + err.message, "error");

@@ -1,5 +1,5 @@
 import { state, documentPreview } from "./state.js";
-import { apiFetch, showToast } from "./api.js";
+import { apiFetch, showToast, escapeHtml } from "./api.js";
 
 const DOC_EXTS = new Set([".pdf", ".docx", ".txt", ".md", ".csv", ".json"]);
 
@@ -115,6 +115,3 @@ export function clearPendingDocument() {
   renderDocumentPreview(null);
 }
 
-function escapeHtml(str) {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}

@@ -1,5 +1,5 @@
 import { state, modelSelector, inputEl, welcomeGreetingEl, getCurrentConv, randomGreeting } from "./state.js";
-import { apiFetch, readErrorMessage, showToast } from "./api.js";
+import { apiFetch, readErrorMessage, showToast, escapeHtml } from "./api.js";
 import { initImportTab } from "./import.js";
 import { CATEGORY_LABELS } from "./render.js";
 
@@ -120,7 +120,7 @@ function renderMemoryList(store) {
           const useCountHtml = item.useCount > 0
             ? `<span class="memory-use-count">\u00d7${item.useCount}</span>`
             : "";
-          return `<div class="memory-item${item.stale ? ' memory-stale' : ''}" data-id="${item.id}" data-category="${category}">
+          return `<div class="memory-item${item.stale ? ' memory-stale' : ''}" data-id="${escapeHtml(String(item.id))}" data-category="${category}">
             <span class="memory-importance" data-level="${imp}" title="${label}">${stars}</span>
             <span class="memory-text">${escapeHtml(item.text)}</span>
             ${useCountHtml}
@@ -136,12 +136,6 @@ function renderMemoryList(store) {
   if (memorySearch && memorySearch.value.trim()) {
     applyMemoryFilter(memorySearch.value.trim().toLowerCase());
   }
-}
-
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 // 删除记忆项（事件委托）
@@ -258,7 +252,7 @@ memoryReflectBtn.addEventListener("click", async () => {
       return;
     }
     if (data.insights?.length > 0) {
-      showToast(`成功提炼 ${data.insights.length} 条洞察`);
+      showToast(`成功提炼 ${data.insights.length} 条洞察`, "success");
       // 刷新记忆列表
       const storeRes = await apiFetch("/api/prompts");
       if (storeRes.ok) {

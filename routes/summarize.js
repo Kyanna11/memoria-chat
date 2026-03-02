@@ -4,6 +4,7 @@ const router = require("express").Router();
 const { getClientForModel, formatProviderError } = require("../lib/clients");
 const { getConversationPath, readConfig } = require("../lib/config");
 const { readPromptFile, SYSTEM_PATH, readMemoryStore, renderMemoryForPrompt } = require("../lib/prompts");
+const { isValidConvId } = require("../lib/validators");
 
 /** 从 LLM 输出中提取 JSON 对象（兼容 ```json 代码块 + 裸 JSON + 夹杂文字） */
 function extractJsonFromLLM(output) {
@@ -85,9 +86,13 @@ const MERGE_PROMPT = `你是一个 Prompt 融合专家。请将新发现的信�
 \`\`\``;
 
 router.post("/conversations/summarize", async (req, res) => {
-  const ids = req.body?.conversationIds;
+  let ids = req.body?.conversationIds;
   if (!Array.isArray(ids) || ids.length === 0 || ids.length > 50) {
     return res.status(400).json({ error: "请选择 1-50 条对话" });
+  }
+  ids = ids.filter(isValidConvId);
+  if (ids.length === 0) {
+    return res.status(400).json({ error: "没有有效的对话 ID" });
   }
   const model = (typeof req.body?.model === "string" && req.body.model.trim())
     ? req.body.model.trim()
@@ -230,6 +235,14 @@ router.post("/conversations/merge-prompt", async (req, res) => {
 
   if (!newSystemFindings && !newMemoryFindings) {
     return res.status(400).json({ error: "没有需要融合的新发现" });
+  }
+  // Type + length guard: prevent non-string or oversized payloads from burning tokens
+  const MAX_FINDINGS_LEN = 50000;
+  if (newSystemFindings && (typeof newSystemFindings !== "string" || newSystemFindings.length > MAX_FINDINGS_LEN)) {
+    return res.status(400).json({ error: "newSystemFindings 格式或长度不合法" });
+  }
+  if (newMemoryFindings && (typeof newMemoryFindings !== "string" || newMemoryFindings.length > MAX_FINDINGS_LEN)) {
+    return res.status(400).json({ error: "newMemoryFindings 格式或长度不合法" });
   }
 
   const model = (typeof reqModel === "string" && reqModel.trim())

@@ -229,7 +229,7 @@ messagesEl.addEventListener("click", (e) => {
       setTimeout(() => {
         btn.innerHTML = ICON_COPY;
       }, 1500);
-    });
+    }).catch(() => {});
   } else if (action === "edit") {
     editMessage(msgIndex);
   } else if (action === "regenerate") {

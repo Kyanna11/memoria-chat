@@ -1,3 +1,5 @@
+const TOAST_BG = { error: "#dc2626", warning: "#b45309", success: "#16a34a", info: "#2563eb" };
+
 export function showToast(message, type = "error") {
   if (!message) return;
   let container = document.getElementById("global-toast-container");
@@ -8,7 +10,7 @@ export function showToast(message, type = "error") {
     (document.body || document.documentElement).appendChild(container);
   }
   const toast = document.createElement("div");
-  const bg = type === "warning" ? "#b45309" : "#dc2626";
+  const bg = TOAST_BG[type] || TOAST_BG.error;
   toast.style.cssText = `background:${bg};color:#fff;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.4;box-shadow:0 6px 18px rgba(0,0,0,.2);opacity:0;transform:translateY(8px);transition:opacity .2s ease,transform .2s ease;pointer-events:auto;`;
   toast.textContent = String(message);
   container.appendChild(toast);
@@ -21,6 +23,11 @@ export function showToast(message, type = "error") {
     toast.style.transform = "translateY(8px)";
     setTimeout(() => toast.remove(), 200);
   }, 4000);
+}
+
+export function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 window.addEventListener("unhandledrejection", (event) => {
@@ -119,11 +126,6 @@ function extractMath(text) {
  * 将占位符替换为 KaTeX 渲染结果。
  * 在 marked + DOMPurify 之后调用，KaTeX 输出绕过 sanitize（KaTeX 自身安全）。
  */
-function escapeHtmlAttr(str) {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-
 function restoreMath(html, mathMap) {
   if (!mathMap.length) return html;
 
@@ -133,7 +135,7 @@ function restoreMath(html, mathMap) {
 
     // KaTeX 未加载时，回退显示原始表达式
     if (typeof window.katex === "undefined") {
-      const escaped = escapeHtmlAttr(entry.expr);
+      const escaped = escapeHtml(entry.expr);
       const delim = entry.displayMode ? "$$" : "$";
       return `<code>${delim}${escaped}${delim}</code>`;
     }
@@ -144,7 +146,7 @@ function restoreMath(html, mathMap) {
         throwOnError: false,
       });
     } catch {
-      const escaped = escapeHtmlAttr(entry.expr);
+      const escaped = escapeHtml(entry.expr);
       return `<code class="katex-error" title="${escaped}">${escaped}</code>`;
     }
   });
@@ -243,6 +245,7 @@ export async function apiFetch(url, options = {}, allowRetry = true) {
         document.cookie = "api_token=" + encodeURIComponent(token) + "; path=/; SameSite=Strict";
         return apiFetch(url, options, false);
       }
+      showToast("需要 ADMIN_TOKEN 才能访问，请刷新页面重试", "warning");
     } else {
       _tokenPromptLock = null;
       localStorage.removeItem("api_token");
