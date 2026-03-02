@@ -1,7 +1,7 @@
-import { state, getCurrentConv, messagesEl, inputEl, sendBtn, compressBtn } from "./state.js";
+import { state, getCurrentConv, messagesEl, inputEl, sendBtn } from "./state.js";
 import { apiFetch, showToast, readErrorMessage, renderMarkdown, formatMetaTime } from "./api.js";
-import { saveConversations, createConversation, renderChatList } from "./conversations.js";
-import { renderMessages, scrollToBottom, startStreamFollow, stopStreamFollow, isNearBottom, createMsgToolbar, getMessageText, appendMemoryIndicator, CATEGORY_LABELS } from "./render.js";
+import { saveConversations, createConversation, renderChatList, saveLocalCache } from "./conversations.js";
+import { renderMessages, scrollToBottom, startStreamFollow, stopStreamFollow, isNearBottom, createMsgToolbar, getMessageText, appendMemoryIndicator, CATEGORY_LABELS, renderSummaryCard } from "./render.js";
 import { renderImagePreview } from "./images.js";
 import { clearPendingDocument, renderDocumentPreview } from "./files.js";
 
@@ -272,46 +272,34 @@ async function ensureSummary(conv, keepRecent) {
   }
 }
 
-async function manualCompress() {
+export async function manualCompress() {
   const conv = getCurrentConv();
   if (!conv || conv.messages.length < 4) {
     showToast("消息太少，无需压缩");
     return;
   }
 
-  const keepRecent = state.currentConfig?.compress_keep_recent ?? 10;
-  const oldCount = Math.max(conv.messages.length - keepRecent, 0);
-  if (oldCount < 2) {
-    showToast("可压缩的旧消息太少");
-    return;
-  }
-
-  compressBtn.disabled = true;
+  // 手动压缩：总结整个对话（全部消息）
+  showToast("正在压缩...");
   try {
-    const summary = await callCompressApi(conv.id, conv.messages.slice(0, oldCount));
+    const summary = await callCompressApi(conv.id, conv.messages);
     if (summary) {
       conv.summary = summary;
+      saveLocalCache();
+      renderSummaryCard(conv);
+      // 滚动到摘要卡片让用户看到
+      requestAnimationFrame(() => {
+        const card = messagesEl.querySelector(".summary-card");
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
       showToast(`已压缩 ${summary.upToIndex} 条消息为摘要`);
     } else {
       showToast("没有可压缩的文本内容");
     }
   } catch (err) {
     showToast("压缩失败: " + err.message, "error");
-  } finally {
-    compressBtn.disabled = false;
   }
 }
-
-export function updateCompressButton() {
-  const conv = getCurrentConv();
-  if (conv && conv.messages.length >= 10) {
-    compressBtn.classList.remove("hidden");
-  } else {
-    compressBtn.classList.add("hidden");
-  }
-}
-
-compressBtn.addEventListener("click", manualCompress);
 
 // ===== 发送消息 =====
 export async function sendMessage() {
@@ -721,8 +709,10 @@ export async function streamAssistantReply(conv, outboundUserContent = null) {
   // Auto-learn: fire-and-forget
   triggerAutoLearn(conv);
 
-  // 更新压缩按钮可见性
-  updateCompressButton();
+  // 自动压缩成功后渲染摘要卡片
+  if (conv.summary?.text) {
+    renderSummaryCard(conv);
+  }
 
   // 首次对话：AI 生成标题替代截断文本
   if (conv.messages.length === 2) {

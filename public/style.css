@@ -1188,23 +1188,156 @@ body {
   color: var(--text-primary);
 }
 
-/* ===== 压缩按钮 ===== */
-.compress-btn {
-  background: none;
+/* ===== + 按钮弹出菜单 ===== */
+#plus-btn-wrapper {
+  position: relative;
+}
+
+#upload-btn svg {
+  transition: transform 0.3s ease;
+}
+
+#upload-btn.active svg {
+  transform: rotate(135deg);
+}
+
+.plus-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 8px;
+  background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 4px 8px;
-  font-size: 13px;
-  transition: color 0.2s, border-color 0.2s;
+  border-radius: 12px;
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+  min-width: 140px;
+  z-index: 20;
+  animation: menuFadeIn 0.15s ease;
 }
-.compress-btn:hover {
+
+@keyframes menuFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.plus-menu.hidden {
+  display: none;
+}
+
+.plus-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 16px;
+  background: none;
+  border: none;
   color: var(--text-primary);
-  border-color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
 }
-.compress-btn.hidden { display: none; }
-.compress-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.plus-menu-item:hover {
+  background: var(--hover-bg);
+}
+
+.plus-menu-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.plus-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 12px;
+}
+
+/* ===== 摘要卡片 ===== */
+.summary-card {
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  max-width: 800px;
+  margin: 4px auto;
+  padding: 0;
+  width: calc(100% - 48px);
+  background: rgba(59, 130, 246, 0.06);
+  overflow: hidden;
+}
+
+[data-theme="light"] .summary-card {
+  background: rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.15);
+}
+
+.summary-card summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-card summary::before {
+  content: "▶ ";
+  font-size: 10px;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+
+.summary-card[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.summary-card summary:hover {
+  color: var(--text-primary);
+}
+
+.summary-card .summary-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.summary-preview {
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 400px;
+  margin-left: 4px;
+  opacity: 0.6;
+}
+
+.summary-card[open] .summary-preview {
+  display: none;
+}
+
+.summary-card-body {
+  padding: 8px 14px 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+  max-height: 400px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap;
+}
+
+@keyframes summarySlideIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.summary-card {
+  animation: summarySlideIn 0.3s ease;
+}
 
 /* ===== 右上角主题切换圆形按钮 ===== */
 #theme-toggle {

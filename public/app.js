@@ -12,11 +12,12 @@ import {
   batchCancelBtn,
   batchDeleteBtn,
   batchSelectAll,
+  plusMenu,
 } from "./modules/state.js";
 import { apiFetch } from "./modules/api.js";
 import { addImages } from "./modules/images.js";
 import { isDocumentFile, addDocument } from "./modules/files.js";
-import { sendMessage, editMessage, regenerateMessage, updateCompressButton } from "./modules/chat.js";
+import { sendMessage, editMessage, regenerateMessage, manualCompress } from "./modules/chat.js";
 import { getMessageText, ICON_COPY, ICON_CHECK } from "./modules/render.js";
 import {
   renderChatList,
@@ -68,8 +69,42 @@ batchSelectAll.addEventListener("change", () => {
   renderChatList();
 });
 
-// ===== 图片上传事件 =====
-uploadBtn.addEventListener("click", () => imageInput.click());
+// ===== + 按钮菜单 =====
+function closePlusMenu() {
+  plusMenu.classList.add("hidden");
+  uploadBtn.classList.remove("active");
+}
+
+uploadBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const isOpen = !plusMenu.classList.contains("hidden");
+  if (isOpen) {
+    closePlusMenu();
+  } else {
+    plusMenu.classList.remove("hidden");
+    uploadBtn.classList.add("active");
+  }
+});
+
+plusMenu.addEventListener("click", (e) => {
+  const item = e.target.closest("[data-action]");
+  if (!item) return;
+  const action = item.dataset.action;
+  closePlusMenu();
+  if (action === "file") {
+    imageInput.click();
+  } else if (action === "compress") {
+    manualCompress();
+  }
+});
+
+// 点击菜单外部关闭
+document.addEventListener("click", (e) => {
+  if (!plusMenu.classList.contains("hidden") && !e.target.closest("#plus-btn-wrapper")) {
+    closePlusMenu();
+  }
+});
+
 imageInput.addEventListener("change", (e) => {
   if (e.target.files.length > 0) {
     const files = Array.from(e.target.files);
@@ -238,14 +273,11 @@ if (window.matchMedia("(max-width: 768px)").matches) {
   });
 }
 
-// 切换对话后更新压缩按钮可见性
-document.addEventListener("conversation-switched", updateCompressButton);
-
 // ===== 初始化 =====
 initStorageSync();
 renderChatList();
 if (state.conversations.length > 0) {
-  switchConversation(state.conversations[0].id).then(() => updateCompressButton());
+  switchConversation(state.conversations[0].id);
 }
 inputEl.focus();
 

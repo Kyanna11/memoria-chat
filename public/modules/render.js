@@ -118,6 +118,63 @@ export function appendMemoryIndicator(container, metaEl, memories) {
   });
 }
 
+// ===== 摘要卡片 =====
+
+const ICON_SUMMARY = '<svg class="summary-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+
+function createSummaryCardEl(summary) {
+  const details = document.createElement("details");
+  details.className = "summary-card";
+
+  const summaryEl = document.createElement("summary");
+
+  // SVG 图标
+  const iconSpan = document.createElement("span");
+  iconSpan.innerHTML = ICON_SUMMARY;
+  summaryEl.appendChild(iconSpan.firstChild);
+
+  const title = document.createElement("span");
+  title.textContent = `对话摘要（压缩了 ${summary.upToIndex} 条旧消息）`;
+  summaryEl.appendChild(title);
+
+  // 折叠时的预览文本
+  const preview = document.createElement("span");
+  preview.className = "summary-preview";
+  const previewText = summary.text.replace(/\n/g, " ").slice(0, 60);
+  preview.textContent = previewText + (summary.text.length > 60 ? "..." : "");
+  summaryEl.appendChild(preview);
+
+  details.appendChild(summaryEl);
+
+  const body = document.createElement("div");
+  body.className = "summary-card-body";
+  body.textContent = summary.text;
+  details.appendChild(body);
+
+  return details;
+}
+
+export function renderSummaryCard(conv) {
+  // 移除已有的摘要卡片
+  const existing = messagesEl.querySelector(".summary-card");
+  if (existing) existing.remove();
+
+  if (!conv?.summary?.text) return;
+
+  const card = createSummaryCardEl(conv.summary);
+  const upToIndex = conv.summary.upToIndex;
+
+  // 找到被压缩的最后一条消息，在其后插入卡片
+  // 如果 upToIndex >= 消息总数（全量压缩），放在末尾
+  const anchorEl = messagesEl.querySelector(`.message[data-msg-index="${upToIndex - 1}"]`);
+  if (anchorEl && anchorEl.nextSibling) {
+    messagesEl.insertBefore(card, anchorEl.nextSibling);
+  } else {
+    // 末尾或找不到锚点 → append
+    messagesEl.appendChild(card);
+  }
+}
+
 export function renderMessages() {
   const conv = getCurrentConv();
   if (!conv || !conv.messages || conv.messages.length === 0) {
@@ -228,6 +285,11 @@ export function renderMessages() {
     div.appendChild(createMsgToolbar(msg, idx));
     messagesEl.appendChild(div);
   });
+
+  // 插入摘要卡片
+  if (conv.summary?.text) {
+    renderSummaryCard(conv);
+  }
 
   scrollToBottom(true);
 }
