@@ -41,6 +41,11 @@ const configAutoDecay = document.getElementById("config-auto-decay");
 const configDecayDays = document.getElementById("config-decay-days");
 const decayDaysVal = document.getElementById("decay-days-val");
 
+// 摘要压缩控件
+const configAutoCompress = document.getElementById("config-auto-compress");
+const configKeepRecent = document.getElementById("config-keep-recent");
+const keepRecentVal = document.getElementById("keep-recent-val");
+
 // 记忆添加控件
 const memoryAddCategory = document.getElementById("memory-add-category");
 const memoryAddText = document.getElementById("memory-add-text");
@@ -74,6 +79,7 @@ configPP.addEventListener("input", () => (ppVal.textContent = configPP.value));
 configFP.addEventListener("input", () => (fpVal.textContent = configFP.value));
 configCtx.addEventListener("input", () => (ctxVal.textContent = configCtx.value));
 configDecayDays.addEventListener("input", () => (decayDaysVal.textContent = configDecayDays.value));
+configKeepRecent.addEventListener("input", () => (keepRecentVal.textContent = configKeepRecent.value));
 
 // ===== 结构化记忆 UI =====
 
@@ -215,6 +221,11 @@ export async function loadConfigPanel() {
     configAutoDecay.checked = config.memory?.autoDecay ?? false;
     configDecayDays.value = config.memory?.decayIdleDays ?? 30;
     decayDaysVal.textContent = config.memory?.decayIdleDays ?? 30;
+
+    // 摘要压缩设置
+    configAutoCompress.checked = config.auto_compress ?? false;
+    configKeepRecent.value = config.compress_keep_recent ?? 10;
+    keepRecentVal.textContent = config.compress_keep_recent ?? 10;
   } catch (err) {
     console.error("加载配置失败:", err);
   }
@@ -313,6 +324,8 @@ savePromptsBtn.addEventListener("click", async () => {
       context_window: parseInt(configCtx.value, 10),
       ai_name: configAiName.value.trim(),
       user_name: configUserName.value.trim(),
+      auto_compress: configAutoCompress.checked,
+      compress_keep_recent: parseInt(configKeepRecent.value, 10),
       memory: {
         autoDecay: configAutoDecay.checked,
         decayIdleDays: parseInt(configDecayDays.value, 10),

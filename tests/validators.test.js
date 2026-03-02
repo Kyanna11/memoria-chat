@@ -475,6 +475,38 @@ describe('validateConfigPatch', () => {
       promotionMinDays: 365,
     });
   });
+
+  // === auto_compress ===
+
+  it('accepts auto_compress true', () => {
+    const result = validateConfigPatch({ auto_compress: true });
+    expect(result.ok).toBe(true);
+    expect(result.value.auto_compress).toBe(true);
+  });
+
+  it('accepts auto_compress false', () => {
+    const result = validateConfigPatch({ auto_compress: false });
+    expect(result.ok).toBe(true);
+    expect(result.value.auto_compress).toBe(false);
+  });
+
+  it('rejects non-boolean auto_compress', () => {
+    expect(validateConfigPatch({ auto_compress: 'yes' }).ok).toBe(false);
+    expect(validateConfigPatch({ auto_compress: 1 }).ok).toBe(false);
+  });
+
+  // === compress_keep_recent ===
+
+  it('accepts compress_keep_recent at boundaries', () => {
+    expect(validateConfigPatch({ compress_keep_recent: 2 }).ok).toBe(true);
+    expect(validateConfigPatch({ compress_keep_recent: 100 }).ok).toBe(true);
+    expect(validateConfigPatch({ compress_keep_recent: 50 }).value.compress_keep_recent).toBe(50);
+  });
+
+  it('rejects compress_keep_recent out of range', () => {
+    expect(validateConfigPatch({ compress_keep_recent: 1 }).ok).toBe(false);
+    expect(validateConfigPatch({ compress_keep_recent: 101 }).ok).toBe(false);
+  });
 });
 
 describe('validateConversation', () => {

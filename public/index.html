@@ -83,6 +83,7 @@
           </svg>
         </label>
         <select id="model-selector"></select>
+        <button id="compress-btn" class="compress-btn hidden" title="压缩对话摘要">📦</button>
         <button id="theme-toggle" title="切换主题"></button>
       </div>
       <!-- 消息区 -->
@@ -320,6 +321,23 @@
               </div>
               <input type="range" id="config-decay-days" min="7" max="180" step="1" value="30" />
               <p class="config-hint">近期动态超过此天数未被引用时触发衰减（重要性=1 自动删除，≥2 标记过期）。偏好习惯固定 90 天。</p>
+            </div>
+            <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;" />
+            <p class="config-section-title">摘要压缩</p>
+            <div class="config-row toggle-row">
+              <label>
+                <input type="checkbox" id="config-auto-compress" />
+                自动压缩长对话
+              </label>
+              <p class="config-hint">开启后，当消息超过上下文条数时自动将旧消息压缩为摘要。首次压缩会消耗少量 token。</p>
+            </div>
+            <div class="config-row slider-row">
+              <div class="slider-label-group">
+                <label>保留最近消息条数</label>
+                <span class="config-val" id="keep-recent-val">10</span>
+              </div>
+              <input type="range" id="config-keep-recent" min="2" max="100" step="2" value="10" />
+              <p class="config-hint">压缩时保留最近多少条原始消息。建议 6-20，越多上下文越精确但 token 越多。</p>
             </div>
           </div>
 

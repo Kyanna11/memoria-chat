@@ -21,6 +21,7 @@ app.use("/api", require("./routes/auto-learn"));
 app.use("/api", require("./routes/conversations"));
 app.use("/api", require("./routes/models"));
 app.use("/api", require("./routes/summarize"));
+app.use("/api", require("./routes/compress"));
 app.use("/api", require("./routes/chat"));
 
 // 404 兜底（未匹配的 /api 路由返回 JSON 而非 HTML）

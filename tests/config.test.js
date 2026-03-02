@@ -87,6 +87,8 @@ describe('normalizeConfig', () => {
     expect(normalizeConfig({})).toEqual({
       ...DEFAULT_CONFIG,
       context_window: 50,
+      auto_compress: false,
+      compress_keep_recent: 10,
     });
   });
 
@@ -99,7 +101,11 @@ describe('normalizeConfig', () => {
       context_window: 120,
       top_p: 0.8,
     };
-    expect(normalizeConfig(input)).toEqual(input);
+    expect(normalizeConfig(input)).toEqual({
+      ...input,
+      auto_compress: false,
+      compress_keep_recent: 10,
+    });
   });
 
   it('falls back to default model for empty string', () => {

@@ -197,9 +197,21 @@ router.put("/conversations/:id", async (req, res) => {
   }
   try {
     await withConvLock(id, async () => {
+      // summary 处理：请求中显式传了 summary 字段就用它（null = 清除），否则保留旧的
+      let summaryToSave;
+      if ("summary" in req.body) {
+        summaryToSave = req.body.summary || undefined; // null/falsy → 不写入（即清除）
+      } else {
+        try {
+          const existing = JSON.parse(await fsp.readFile(filePath, "utf-8"));
+          summaryToSave = existing.summary;
+        } catch { /* 首次保存，无旧文件 */ }
+      }
+
       const toSave = {
         ...validated.value,
         updatedAt: new Date().toISOString(),
+        ...(summaryToSave ? { summary: summaryToSave } : {}),
       };
       await atomicWrite(filePath, JSON.stringify(toSave));
       await updateIndexEntry(validated.value.id, validated.value.title, validated.value.messages.length).catch(err => console.warn("[index]", err.message));

@@ -1188,6 +1188,24 @@ body {
   color: var(--text-primary);
 }
 
+/* ===== 压缩按钮 ===== */
+.compress-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 13px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.compress-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+.compress-btn.hidden { display: none; }
+.compress-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ===== 右上角主题切换圆形按钮 ===== */
 #theme-toggle {
   margin-left: auto;

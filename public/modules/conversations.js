@@ -64,7 +64,10 @@ export async function saveConversationToServer(conv) {
       const res = await apiFetch(`/api/conversations/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: conv.id, title: conv.title, messages: conv.messages }),
+        body: JSON.stringify({
+          id: conv.id, title: conv.title, messages: conv.messages,
+          ...(conv.summary !== undefined ? { summary: conv.summary } : {}),
+        }),
       });
       if (res && !res.ok) {
         showToast("对话保存失败，将在下次操作时重试", "warning");
@@ -130,6 +133,7 @@ export async function switchConversation(id) {
   renderMessages();
   renderChatList();
   inputEl.focus();
+  document.dispatchEvent(new Event("conversation-switched"));
 }
 
 export async function loadConversationMessages(id) {
@@ -141,6 +145,7 @@ export async function loadConversationMessages(id) {
     const data = await res.json();
     conv.messages = data.messages || [];
     conv.title = data.title || conv.title;
+    if (data.summary) conv.summary = data.summary;
     saveLocalCache();
     if (state.currentConvId === id) {
       renderMessages();

@@ -16,7 +16,7 @@ import {
 import { apiFetch } from "./modules/api.js";
 import { addImages } from "./modules/images.js";
 import { isDocumentFile, addDocument } from "./modules/files.js";
-import { sendMessage, editMessage, regenerateMessage } from "./modules/chat.js";
+import { sendMessage, editMessage, regenerateMessage, updateCompressButton } from "./modules/chat.js";
 import { getMessageText, ICON_COPY, ICON_CHECK } from "./modules/render.js";
 import {
   renderChatList,
@@ -238,11 +238,14 @@ if (window.matchMedia("(max-width: 768px)").matches) {
   });
 }
 
+// 切换对话后更新压缩按钮可见性
+document.addEventListener("conversation-switched", updateCompressButton);
+
 // ===== 初始化 =====
 initStorageSync();
 renderChatList();
 if (state.conversations.length > 0) {
-  switchConversation(state.conversations[0].id);
+  switchConversation(state.conversations[0].id).then(() => updateCompressButton());
 }
 inputEl.focus();
 

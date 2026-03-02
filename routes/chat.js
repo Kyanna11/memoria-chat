@@ -77,9 +77,17 @@ router.post("/chat", async (req, res) => {
       baseParams.tools = [SEARCH_TOOL];
     }
 
+    const summary = typeof req.body?.summary === "string"
+      ? req.body.summary.trim().slice(0, 5000)
+      : null;
+
     const allMessages = [];
     if (systemPrompt) {
-      allMessages.push({ role: "system", content: systemPrompt });
+      let fullSystem = systemPrompt;
+      if (summary) {
+        fullSystem += "\n\n---\n\n## 之前的对话摘要\n\n" + summary;
+      }
+      allMessages.push({ role: "system", content: fullSystem });
     }
     allMessages.push(...validated.value);
 

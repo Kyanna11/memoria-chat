@@ -1,4 +1,4 @@
-import { state, getCurrentConv, messagesEl, inputEl, sendBtn } from "./state.js";
+import { state, getCurrentConv, messagesEl, inputEl, sendBtn, compressBtn } from "./state.js";
 import { apiFetch, showToast, readErrorMessage, renderMarkdown, formatMetaTime } from "./api.js";
 import { saveConversations, createConversation, renderChatList } from "./conversations.js";
 import { renderMessages, scrollToBottom, startStreamFollow, stopStreamFollow, isNearBottom, createMsgToolbar, getMessageText, appendMemoryIndicator, CATEGORY_LABELS } from "./render.js";
@@ -207,6 +207,112 @@ function showLearnCard(ops) {
   }, 3000);
 }
 
+// ===== 摘要压缩 =====
+
+// 缓存容忍度：已有摘要覆盖的消息数只要在 oldCount ± 5 范围内就认为仍新鲜
+const STALE_MARGIN = 5;
+
+/** 提取消息的纯文本内容，过滤掉图片（避免发送 base64 给 compress 端点） */
+function extractTextContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const texts = content.filter((p) => p.type === "text").map((p) => p.text);
+    return texts.length > 0 ? texts.join("\n") : null;
+  }
+  return null;
+}
+
+/** 调用 compress API，返回 summary 对象或 null */
+async function callCompressApi(convId, messages) {
+  const originalCount = messages.length;
+  // 只发纯文本，过滤图片消息
+  const textMessages = [];
+  for (const m of messages) {
+    const text = extractTextContent(m.content);
+    if (text !== null) textMessages.push({ role: m.role, content: text });
+  }
+  if (textMessages.length < 2) return null;
+
+  const res = await apiFetch("/api/compress", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ convId, messages: textMessages, originalCount }),
+  });
+  if (!res.ok) {
+    const errMsg = await readErrorMessage(res).catch(() => `HTTP ${res.status}`);
+    throw new Error(errMsg);
+  }
+  const data = await res.json();
+  return {
+    text: data.summary,
+    upToIndex: data.compressedCount,
+    generatedAt: data.generatedAt,
+  };
+}
+
+async function ensureSummary(conv, keepRecent) {
+  const totalMessages = conv.messages.length - 1; // 不含还没发的 assistant 占位
+  const oldCount = totalMessages - keepRecent;
+  if (oldCount < 2) return null;
+
+  // 检查缓存新鲜度
+  if (conv.summary && conv.summary.text && conv.summary.upToIndex >= oldCount - STALE_MARGIN) {
+    return conv.summary.text;
+  }
+
+  // 生成新摘要
+  try {
+    const summary = await callCompressApi(conv.id, conv.messages.slice(0, oldCount));
+    if (summary) conv.summary = summary;
+    return summary?.text || null;
+  } catch (err) {
+    console.warn("[compress] failed:", err.message);
+    showToast("摘要生成失败，将使用普通模式", "warning");
+    return null;
+  }
+}
+
+async function manualCompress() {
+  const conv = getCurrentConv();
+  if (!conv || conv.messages.length < 4) {
+    showToast("消息太少，无需压缩");
+    return;
+  }
+
+  const keepRecent = state.currentConfig?.compress_keep_recent ?? 10;
+  const oldCount = Math.max(conv.messages.length - keepRecent, 0);
+  if (oldCount < 2) {
+    showToast("可压缩的旧消息太少");
+    return;
+  }
+
+  compressBtn.disabled = true;
+  try {
+    const summary = await callCompressApi(conv.id, conv.messages.slice(0, oldCount));
+    if (summary) {
+      conv.summary = summary;
+      showToast(`已压缩 ${summary.upToIndex} 条消息为摘要`);
+    } else {
+      showToast("没有可压缩的文本内容");
+    }
+  } catch (err) {
+    showToast("压缩失败: " + err.message, "error");
+  } finally {
+    compressBtn.disabled = false;
+  }
+}
+
+export function updateCompressButton() {
+  const conv = getCurrentConv();
+  if (conv && conv.messages.length >= 10) {
+    compressBtn.classList.remove("hidden");
+  } else {
+    compressBtn.classList.add("hidden");
+  }
+}
+
+compressBtn.addEventListener("click", manualCompress);
+
 // ===== 发送消息 =====
 export async function sendMessage() {
   const text = inputEl.value.trim();
@@ -346,10 +452,16 @@ export async function streamAssistantReply(conv, outboundUserContent = null) {
 
   try {
     const maxCtx = state.currentConfig?.context_window ?? 50;
-    const apiMessages = conv.messages.slice(0, -1).slice(-maxCtx).map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+    const autoCompress = state.currentConfig?.auto_compress ?? false;
+    const keepRecent = state.currentConfig?.compress_keep_recent ?? 10;
+
+    let summaryText = null;
+    if (autoCompress && conv.messages.length - 1 > maxCtx) {
+      summaryText = await ensureSummary(conv, keepRecent);
+    }
+    const sliceCount = summaryText ? keepRecent : maxCtx;
+    const apiMessages = conv.messages.slice(0, -1).slice(-sliceCount)
+      .map((m) => ({ role: m.role, content: m.content }));
 
     // 若有完整内容（图片原图 / 文档全文），替换最后一条 user 消息的 content
     if (outboundUserContent) {
@@ -375,7 +487,10 @@ export async function streamAssistantReply(conv, outboundUserContent = null) {
     const response = await apiFetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: apiMessages }),
+      body: JSON.stringify({
+        messages: apiMessages,
+        ...(summaryText ? { summary: summaryText } : {}),
+      }),
       signal: chatAbort.signal,
     });
     resetInactivityTimer();
@@ -606,6 +721,9 @@ export async function streamAssistantReply(conv, outboundUserContent = null) {
   // Auto-learn: fire-and-forget
   triggerAutoLearn(conv);
 
+  // 更新压缩按钮可见性
+  updateCompressButton();
+
   // 首次对话：AI 生成标题替代截断文本
   if (conv.messages.length === 2) {
     generateTitle(conv);
@@ -713,8 +831,9 @@ export function editMessage(msgIndex) {
     }
     msg.meta = { ...(msg.meta || {}), timestamp: new Date().toISOString() };
 
-    // 截断后续消息
+    // 截断后续消息（清除可能过时的摘要缓存）
     conv.messages.length = msgIndex + 1;
+    conv.summary = null;
     saveConversations(conv);
     renderMessages();
 
@@ -742,8 +861,9 @@ export async function regenerateMessage(msgIndex) {
   const msg = conv.messages[msgIndex];
   if (!msg || msg.role !== "assistant") return;
 
-  // 截断从当前 assistant 消息开始的所有内容
+  // 截断从当前 assistant 消息开始的所有内容（清除可能过时的摘要缓存）
   conv.messages.length = msgIndex;
+  conv.summary = null;
   saveConversations(conv);
   renderMessages();
 

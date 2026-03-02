@@ -76,6 +76,7 @@ export const batchSelectAll = document.getElementById("batch-select-all");
 export const batchCount = document.getElementById("batch-count");
 export const batchDeleteBtn = document.getElementById("batch-delete-btn");
 export const batchCancelBtn = document.getElementById("batch-cancel-btn");
+export const compressBtn = document.getElementById("compress-btn");
 
 export const WELCOME_GREETINGS = [
   "今天想聊点什么？",
