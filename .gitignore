@@ -12,3 +12,8 @@ todo.md
 memoria-evolution-plan.md
 memoria-voice-plan.md
 Memoria-Future-Vision.md
+
+# Python
+__pycache__/
+*.pyc
+voice/venv/

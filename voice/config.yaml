@@ -1,0 +1,17 @@
+# Memoria Voice Service Configuration
+
+# --- Audio (Step 1) ---
+sample_rate: 16000
+channels: 1
+
+# --- Server connection (Step 2+) ---
+# memoria_url: "http://127.0.0.1:3000"
+# NOTE: Use ADMIN_TOKEN env var for secrets. Never put real tokens in this file.
+
+# --- TTS (Step 3+) ---
+# tts_voice: "alloy"
+
+# --- VAD / Wake (Step 4+) ---
+# vad_threshold: 0.5
+# silence_duration: 1.5    # 秒，静音多久算说完
+# wake_word: "hey memoria"

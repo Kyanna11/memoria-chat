@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-03-04
+
+### New Features — Voice Plan Step 1: Python voice service skeleton + audio I/O
+- **Python 语音服务骨架** — `voice/` 目录新增 6 文件：config 加载（YAML + 环境变量覆盖）、6 状态状态机（IDLE/LISTENING/PROCESSING/SPEAKING/SLEEPING/ERROR）、麦克风录音 + 音箱播放模块
+- **硬件验证工具** — `python main.py --test-audio` 一键录 5 秒回放，打印设备列表和峰值振幅，静音自动告警
+
 ## 2026-03-03
 
 ### New Features — Voice Plan Step 0: Server-side API for voice service
