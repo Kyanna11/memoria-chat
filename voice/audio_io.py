@@ -68,17 +68,13 @@ def _generate_tone(
 class TTSPlayer:
     """Callback-driven audio player for TTS output.
 
-    The stream runs continuously (outputting zeros when idle).  Each AI
-    response goes through: ``begin_response`` → ``enqueue`` × N →
-    ``end_response`` → ``wait_done``.  A prebuffer accumulates ~100 ms of
-    audio before the callback starts draining, avoiding startup underflow.
+    The stream runs continuously, outputting an inaudible AC dither
+    keepalive signal (±1e-4) when idle to prevent WASAPI/DAC endpoint
+    suspension.  Each AI response goes through: ``begin_response`` →
+    ``enqueue`` × N → ``end_response`` → ``wait_done``.  Playback
+    starts after at least 2 chunks or ~200 ms of audio is buffered,
+    avoiding first-sentence stutter from network jitter.
     """
-
-    # Near-zero value to fill silent frames.  Pure 0.0 causes WASAPI
-    # shared-mode to suspend the endpoint; the subsequent resume distorts
-    # the first few hundred ms of real audio.  1e-10 (~-200 dB) is
-    # inaudible but keeps the endpoint alive.
-    _SILENCE: float = 1e-10
 
     def __init__(self, samplerate: int = 24000, prebuffer_ms: int = 200) -> None:
         self.sr = samplerate
@@ -89,8 +85,17 @@ class TTSPlayer:
         self._armed = False
         self._interrupted = False
         self._queued_frames = 0
+        self._queued_chunks = 0
         self._done = threading.Event()
         self._done.set()  # not waiting initially
+
+        # AC dither keepalive: ±1e-4 (~-80 dB, inaudible) alternating
+        # signal.  Pure 0.0 or 1e-10 both quantize to zero in 16/24-bit
+        # DACs, causing WASAPI to suspend the audio endpoint.  The
+        # alternating polarity prevents APO DC-offset filtering.
+        self._keepalive = np.empty(256, dtype=np.float32)
+        self._keepalive[0::2] = 1e-4
+        self._keepalive[1::2] = -1e-4
 
         self._stream = sd.OutputStream(
             samplerate=samplerate,
@@ -105,8 +110,18 @@ class TTSPlayer:
     # -- PortAudio callback (runs on audio thread) -------------------------
 
     def _callback(self, outdata: np.ndarray, frames: int, _time_info, status) -> None:
+        if status:
+            print(f"  [audio] callback status: {status}", flush=True)
+
         out = outdata[:, 0]
-        out.fill(self._SILENCE)  # keep WASAPI endpoint alive
+
+        # Fill with AC dither keepalive (prevents WASAPI/DAC suspension)
+        ka = self._keepalive
+        full, rem = divmod(frames, len(ka))
+        for k in range(full):
+            out[k * len(ka) : (k + 1) * len(ka)] = ka
+        if rem:
+            out[full * len(ka) :] = ka[:rem]
 
         if not self._armed or self._interrupted:
             return
@@ -117,7 +132,7 @@ class TTSPlayer:
                 try:
                     chunk = self._q.get_nowait()
                 except _queue_mod.Empty:
-                    break
+                    break  # rest of buffer keeps keepalive dither
                 if chunk is None:  # end-of-response sentinel
                     self._armed = False
                     self._done.set()
@@ -148,15 +163,24 @@ class TTSPlayer:
         self._current = np.zeros(0, dtype=np.float32)
         self._pos = 0
         self._queued_frames = 0
+        self._queued_chunks = 0
         self._done.clear()
 
     def enqueue(self, audio_np: np.ndarray) -> None:
-        """Add a decoded float32 audio chunk (one sentence) to the queue."""
+        """Add a decoded float32 audio chunk (one sentence) to the queue.
+
+        Arms the callback when enough audio is buffered: at least 2 chunks
+        OR total frames exceeding the prebuffer threshold (whichever comes
+        first).  This prevents first-sentence stutter when only one short
+        chunk is available and the next hasn't arrived from the network yet.
+        """
         a = np.asarray(audio_np, dtype=np.float32).reshape(-1)
         self._q.put(a)
         if not self._armed:
             self._queued_frames += len(a)
-            if self._queued_frames >= self._prebuffer_frames:
+            self._queued_chunks += 1
+            if (self._queued_chunks >= 2
+                    or self._queued_frames >= self._prebuffer_frames):
                 self._armed = True
 
     def end_response(self) -> None:

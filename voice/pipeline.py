@@ -126,7 +126,10 @@ async def run_pipeline(
                     break
                 text, wav_bytes = item
                 try:
-                    audio_np, _sr = audio_io.decode_wav_bytes(wav_bytes)
+                    audio_np, sr = audio_io.decode_wav_bytes(wav_bytes)
+                    if sr != player.sr:
+                        print(f"  [TTS] sample rate mismatch: "
+                              f"got {sr}, player {player.sr}")
                     player.enqueue(audio_np)
                     played_parts.append(text)
                 except Exception as exc:
