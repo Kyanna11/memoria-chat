@@ -71,12 +71,16 @@ async def run_pipeline(
                         await sentence_q.put(sentence)
                 if "meta" in event:
                     meta_holder.append(event["meta"])
-            # Flush remaining tokens
-            tail = buffer.flush()
-            if tail:
-                await sentence_q.put(tail)
+            # Flush remaining tokens (skip on cancel — pipeline is being torn down)
+            if not cancel.is_set():
+                tail = buffer.flush()
+                if tail:
+                    await sentence_q.put(tail)
         finally:
-            await sentence_q.put(None)  # always signal downstream
+            try:
+                await sentence_q.put(None)  # signal downstream
+            except asyncio.CancelledError:
+                pass  # pipeline torn down via task.cancel()
 
     # ------------------------------------------------------------------
     # Stage 2: sentence queue → TTS → audio queue
@@ -97,7 +101,10 @@ async def run_pipeline(
                 except Exception as exc:
                     print(f"  [TTS] 合成失败，跳过: {exc}")
         finally:
-            await audio_q.put(None)  # always signal downstream
+            try:
+                await audio_q.put(None)  # signal downstream
+            except asyncio.CancelledError:
+                pass  # pipeline torn down via task.cancel()
 
     # ------------------------------------------------------------------
     # Stage 3: audio queue → callback-driven TTSPlayer
@@ -125,8 +132,11 @@ async def run_pipeline(
                 except Exception as exc:
                     print(f"  [播放] 失败，跳过: {exc}")
         finally:
-            player.end_response()
-            await asyncio.to_thread(player.wait_done)
+            if cancel.is_set():
+                player.interrupt()
+            else:
+                player.end_response()
+                await asyncio.to_thread(player.wait_done)
 
     # ------------------------------------------------------------------
     # Run all three stages concurrently

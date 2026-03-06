@@ -87,6 +87,7 @@ class TTSPlayer:
         self._current = np.zeros(0, dtype=np.float32)
         self._pos = 0
         self._armed = False
+        self._interrupted = False
         self._queued_frames = 0
         self._done = threading.Event()
         self._done.set()  # not waiting initially
@@ -107,7 +108,7 @@ class TTSPlayer:
         out = outdata[:, 0]
         out.fill(self._SILENCE)  # keep WASAPI endpoint alive
 
-        if not self._armed:
+        if not self._armed or self._interrupted:
             return
 
         i = 0
@@ -130,16 +131,20 @@ class TTSPlayer:
 
     # -- Public API --------------------------------------------------------
 
-    def begin_response(self) -> None:
-        """Prepare for a new AI response.  Disarms the callback until
-        enough audio has been buffered (prebuffer)."""
-        self._armed = False  # callback stops reading immediately
-        # Drain stale data from a previous response
+    def _drain_queue(self) -> None:
+        """Remove all pending chunks from the playback queue."""
         while True:
             try:
                 self._q.get_nowait()
             except _queue_mod.Empty:
                 break
+
+    def begin_response(self) -> None:
+        """Prepare for a new AI response.  Disarms the callback until
+        enough audio has been buffered (prebuffer)."""
+        self._interrupted = False  # reset interrupt flag from previous barge-in
+        self._armed = False  # callback stops reading immediately
+        self._drain_queue()
         self._current = np.zeros(0, dtype=np.float32)
         self._pos = 0
         self._queued_frames = 0
@@ -169,6 +174,17 @@ class TTSPlayer:
         self.enqueue(audio_np)
         self.end_response()
         self.wait_done(timeout)
+
+    def interrupt(self) -> None:
+        """Stop playback immediately and discard all queued audio.
+
+        Thread-safe: sets a bool flag (atomic under CPython GIL) that the
+        PortAudio callback checks on its next invocation.  Queue draining
+        uses ``queue.Queue`` which is inherently thread-safe.
+        """
+        self._interrupted = True
+        self._drain_queue()
+        self._done.set()
 
     def close(self) -> None:
         """Stop and close the stream.  Call on shutdown."""

@@ -74,6 +74,189 @@ async def wait_for_trigger(
                 pass
 
 
+async def _listen_and_transcribe(
+    vad, sr: int, silence_ms: int, max_sec: float,
+    local_stt, client, language: str,
+    wake_listener,
+) -> str | None:
+    """Record via VAD -> STT -> return text, or None on failure.
+
+    Pauses wake_listener during recording (mic sharing).
+    Uses try/finally to guarantee resume even on error.
+    """
+    import audio_io
+
+    if wake_listener:
+        wake_listener.pause()
+    try:
+        await asyncio.to_thread(audio_io.play_tone)
+        print("[LISTENING] 正在听...")
+
+        vad.reset()
+        audio = await asyncio.to_thread(
+            audio_io.stream_record_with_vad,
+            vad, sample_rate=sr,
+            silence_ms=silence_ms,
+            max_seconds=max_sec,
+        )
+
+        duration = len(audio) / sr
+        if duration < 0.3:
+            print("(录音太短，已忽略)\n")
+            return None
+
+        print(f"[PROCESSING] 识别中... ({duration:.1f}s)")
+        try:
+            if local_stt:
+                text = await local_stt.transcribe(audio, sr=sr)
+            else:
+                wav_bytes = audio_io.numpy_to_wav_bytes(audio, sample_rate=sr)
+                text = await client.transcribe(wav_bytes, language=language)
+        except Exception as e:
+            print(f"Error: STT 失败 ({e})\n")
+            return None
+
+        if not text or not text.strip():
+            print("(未识别到内容)\n")
+            return None
+
+        return text.strip()
+    finally:
+        if wake_listener:
+            wake_listener.resume()
+
+
+async def _do_speak(
+    sm, client, session,
+    tts_voice: str, tts_speed: float,
+    triggers: list[asyncio.Event],
+    space_event: asyncio.Event, wake_event: asyncio.Event,
+    wake_listener,
+    vad, sr: int, silence_ms: int, max_sec: float,
+    local_stt, language: str,
+) -> None:
+    """Run AI pipeline with barge-in support.  Loops on repeated barge-ins.
+
+    Enters in SPEAKING state.  Exits in IDLE state.
+    On barge-in: interrupts pipeline -> listens -> transcribes -> speaks again.
+    """
+    import audio_io
+    from pipeline import run_pipeline, ChatError
+    from state_machine import State
+
+    while True:
+        # --- Run pipeline with concurrent trigger monitoring ---
+        print(f"[{sm.state.name}] AI 回复中...")
+
+        # Fresh cancel event per pipeline (old pipeline keeps its own signal)
+        pipeline_cancel = asyncio.Event()
+
+        # Pause wake word listener during SPEAKING (prevent AI voice self-trigger)
+        if wake_listener:
+            wake_listener.pause()
+
+        # Discard stale triggers before monitoring
+        space_event.clear()
+        wake_event.clear()
+
+        pipeline_task = asyncio.create_task(run_pipeline(
+            client=client,
+            messages=session.messages,
+            cancel=pipeline_cancel,
+            tts_voice=tts_voice,
+            tts_speed=tts_speed,
+        ))
+
+        # Monitor for trigger (barge-in) while pipeline runs
+        trigger_task = asyncio.create_task(
+            wait_for_trigger(triggers, timeout=None)
+        )
+
+        done, _ = await asyncio.wait(
+            {pipeline_task, trigger_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        barged_in = trigger_task in done and not pipeline_task.done()
+
+        if barged_in:
+            # === Barge-in: stop audio immediately, don't wait for pipeline ===
+            print("[BARGE-IN] 打断 AI")
+            pipeline_cancel.set()
+            audio_io.get_tts_player().interrupt()
+            pipeline_task.cancel()  # abort in-flight HTTP calls
+
+            # Wait for pipeline to finish (cancel makes it exit fast)
+            try:
+                await pipeline_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                print(f"Warning: pipeline cleanup error: {e}")
+        else:
+            # === Normal completion ===
+            trigger_task.cancel()
+            try:
+                await trigger_task
+            except asyncio.CancelledError:
+                pass
+
+        # Resume wake word listener
+        if wake_listener:
+            wake_listener.resume()
+
+        # Process pipeline result (only available when not barged_in)
+        if not barged_in:
+            try:
+                result = pipeline_task.result()
+            except ChatError as e:
+                print(f"Error: AI 回复错误 ({e})")
+                sm.transition(State.IDLE)
+                return
+            except Exception as e:
+                print(f"Error: AI 回复失败 ({e})")
+                sm.transition(State.IDLE)
+                return
+
+            if result.full_text:
+                print(f"AI: {result.full_text}")
+                try:
+                    await session.add_assistant_message(result.full_text)
+                except Exception as e:
+                    print(f"Warning: 回复保存失败 ({e})")
+                if result.meta:
+                    m = result.meta
+                    print(
+                        f"  [{m.get('model', '')}] "
+                        f"{m.get('total_tokens', 0)} tokens"
+                    )
+            else:
+                print("(AI 无回复)")
+
+            sm.transition(State.IDLE)
+            return
+
+        # === Barge-in path: listen for new user input ===
+        sm.transition(State.LISTENING)
+        text = await _listen_and_transcribe(
+            vad, sr, silence_ms, max_sec,
+            local_stt, client, language, wake_listener,
+        )
+        if text is None:
+            sm.transition(State.IDLE)
+            return
+
+        sm.transition(State.PROCESSING)
+        print(f"You: {text}")
+        try:
+            await session.add_user_message(text)
+        except Exception as e:
+            print(f"Warning: 消息保存失败 ({e})")
+
+        # Loop back to SPEAKING for the new response (supports repeated barge-ins)
+        sm.transition(State.SPEAKING)
+
+
 async def talk_loop() -> None:
     """Async talk loop: record → STT → AI chat → TTS → playback."""
     from config import cfg
@@ -84,8 +267,6 @@ async def talk_loop() -> None:
     from memoria_client import MemoriaClient
     from session import Session
     from stt import make_transcriber
-    from pipeline import run_pipeline, ChatError
-
     sr = cfg["sample_rate"]
     silence_ms = int(cfg["silence_duration"] * 1000)
     max_sec = cfg["max_recording"]
@@ -107,9 +288,6 @@ async def talk_loop() -> None:
         admin_token=cfg["admin_token"],
     )
     session = Session(client, timeout_m=cfg["session_timeout"])
-
-    # Cancel event for pipeline (Step 6 barge-in will set this)
-    cancel_event = asyncio.Event()
 
     # Bridge keyboard events → asyncio
     loop = asyncio.get_running_loop()
@@ -202,54 +380,17 @@ async def talk_loop() -> None:
                 except Exception as e:
                     print(f"Error: 创建对话失败 ({e})")
 
-                # Pause wake word listener before VAD recording (mic sharing)
-                if wake_listener:
-                    wake_listener.pause()
-
-                # Start listening
+                # Listen + transcribe
                 sm.transition(State.LISTENING)
-                await asyncio.to_thread(audio_io.play_tone)
-                print(f"[{sm.state.name}] 正在听...")
-
-                vad.reset()
-                audio = await asyncio.to_thread(
-                    audio_io.stream_record_with_vad,
-                    vad,
-                    sample_rate=sr,
-                    silence_ms=silence_ms,
-                    max_seconds=max_sec,
+                text = await _listen_and_transcribe(
+                    vad, sr, silence_ms, max_sec,
+                    local_stt, client, language, wake_listener,
                 )
-
-                # Resume wake word listener now that recording is done
-                if wake_listener:
-                    wake_listener.resume()
-
-                duration = len(audio) / sr
-                if duration < 0.3:
-                    print("(录音太短，已忽略)\n")
+                if text is None:
                     sm.transition(State.IDLE)
                     continue
 
-                # Transcribe
                 sm.transition(State.PROCESSING)
-                print(f"[{sm.state.name}] 识别中... ({duration:.1f}s)")
-
-                try:
-                    if local_stt:
-                        text = await local_stt.transcribe(audio, sr=sr)
-                    else:
-                        wav_bytes = audio_io.numpy_to_wav_bytes(audio, sample_rate=sr)
-                        text = await client.transcribe(wav_bytes, language=language)
-                except Exception as e:
-                    print(f"Error: STT 失败 ({e})\n")
-                    sm.transition(State.IDLE)
-                    continue
-
-                if not text or not text.strip():
-                    print("(未识别到内容)\n")
-                    sm.transition(State.IDLE)
-                    continue
-
                 print(f"You: {text}")
 
                 # Persist user message (non-fatal)
@@ -258,39 +399,17 @@ async def talk_loop() -> None:
                 except Exception as e:
                     print(f"Warning: 消息保存失败 ({e})")
 
-                # --- AI response pipeline ---
+                # --- AI response pipeline (with barge-in support) ---
+                # _do_speak loops internally on barge-ins, returns in IDLE
                 sm.transition(State.SPEAKING)
-                print(f"[{sm.state.name}] AI 回复中...")
-                cancel_event.clear()
-
-                try:
-                    result = await run_pipeline(
-                        client=client,
-                        messages=session.messages,
-                        cancel=cancel_event,
-                        tts_voice=tts_voice,
-                        tts_speed=tts_speed,
-                    )
-                    if result.full_text:
-                        print(f"AI: {result.full_text}")
-                        try:
-                            await session.add_assistant_message(result.full_text)
-                        except Exception as e:
-                            print(f"Warning: 回复保存失败 ({e})")
-                        if result.meta:
-                            m = result.meta
-                            print(
-                                f"  [{m.get('model', '')}] "
-                                f"{m.get('total_tokens', 0)} tokens"
-                            )
-                    else:
-                        print("(AI 无回复)")
-                except ChatError as e:
-                    print(f"Error: AI 回复错误 ({e})")
-                except Exception as e:
-                    print(f"Error: AI 回复失败 ({e})")
-
-                sm.transition(State.IDLE)
+                await _do_speak(
+                    sm, client, session,
+                    tts_voice, tts_speed,
+                    triggers, space_event, wake_event,
+                    wake_listener,
+                    vad, sr, silence_ms, max_sec,
+                    local_stt, language,
+                )
 
             # ============================================================
             # SLEEPING — wait for trigger (Space / wake word) to wake up

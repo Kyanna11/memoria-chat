@@ -2,6 +2,12 @@
 
 ## 2026-03-06
 
+### New Features — Voice Plan Step 6: Barge-in (interrupt AI while speaking)
+- **按键打断 AI** — AI 说话时按 Space 立即停止音频播放，开始录音接收新指令，无需等 AI 说完
+- **连续打断** — 支持反复 barge-in：打断→说话→AI 回复→再打断，循环不断
+- **即时中断** — 三层取消机制（cancel event + task.cancel + player.interrupt）确保音频、HTTP 请求、TTS 合成同时停止，无延迟
+- **Pipeline 隔离** — 每次 AI 回复使用独立 cancel event，避免旧/新 pipeline 互相干扰
+
 ### New Features — Voice Plan Step 5: Wake word detection
 - **语音唤醒** — 支持语音唤醒词触发对话，无需按键。基于 sherpa-onnx zipformer 中英双语 KWS 模型（~4MB），支持任意中文/英文关键词，无需训练
 - **三种触发模式** — `trigger_mode` 配置：`keypress`（Space 按键）、`wakeword`（语音唤醒）、`both`（两者并行）
