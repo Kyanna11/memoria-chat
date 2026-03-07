@@ -26,8 +26,15 @@ tts_provider: "api"         # "api"=OpenAI TTS, "edge"=微软Edge TTS(免费), "
 tts_voice: "alloy"          # OpenAI: alloy/ash/ballad/coral/echo/fable/nova/onyx/sage/shimmer/verse
 tts_speed: 1.0              # 0.25~4.0
 
-# --- Wake Word (Step 5) ---
+# --- Trigger (Step 5) ---
 trigger_mode: "keypress"     # "keypress"=Space only, "wakeword"=voice only, "both"=Space+voice
+talk_key: "space"            # 说话键（keyboard 库支持的键名）
 wake_word: "小莫小莫,hey memoria"          # 唤醒词（多个用逗号分隔）
 wake_threshold: 0.25          # 检测阈值，越大越难触发（0.1~0.9）
 wake_score: 1.5              # 关键词增强分数，越大越容易通过 beam search
+
+# --- Behavior ---
+filler_enabled: true         # 录音结束后播放确认音
+
+# --- Privacy ---
+log_transcripts: false       # 是否在终端打印用户语音文本（false=只显示"已识别"）

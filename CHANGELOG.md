@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-07
+
+### New Features — Voice Plan Step 7: Configuration & deployment
+- **自定义说话键** — `talk_key` 配置项，不再硬编码 Space，支持 keyboard 库所有键名
+- **确认音开关** — `filler_enabled` 配置项控制录音后的"叮"提示音
+- **隐私模式** — `log_transcripts` 配置项控制是否在终端打印用户语音文本，默认关闭只显示"已识别"
+- **自定义配置路径** — `--config PATH` 命令行参数，支持指定任意 config.yaml 位置
+- **systemd 部署** — 提供 `memoria-voice.service` 模板，Linux 服务器一键部署
+
+### Improvements
+- **参数瘦身** — 录音/STT 配置打包为 `ListenCfg` dataclass，`_do_speak` 从 17 个参数降到 10 个
+- **布尔环境变量校验** — 无效值（如 `FILLER_ENABLED=on`）不再静默变 False，改为警告并保留默认值
+
 ## 2026-03-06
 
 ### Bug Fixes — Voice TTS playback stability

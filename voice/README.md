@@ -79,9 +79,15 @@ python main.py --talk
 | `IDLE_REMIND_M` | `idle_remind_m` | `2` | 空闲提醒（分钟），0=禁用 |
 | `IDLE_REMIND_WAIT_S` | `idle_remind_wait_s` | `15` | 提醒后等待（秒） |
 | `TRIGGER_MODE` | `trigger_mode` | `keypress` | `keypress`=Space, `wakeword`=语音唤醒, `both`=两者 |
+| `TTS_PROVIDER` | `tts_provider` | `api` | `api`=OpenAI TTS, `edge`=Edge TTS(免费), `local`=kokoro-onnx |
+| `TTS_VOICE` | `tts_voice` | `alloy` | TTS 语音（取决于 provider） |
+| `TTS_SPEED` | `tts_speed` | `1.0` | TTS 语速（0.25~4.0） |
+| `TALK_KEY` | `talk_key` | `space` | 说话键（keyboard 库支持的键名） |
 | `WAKE_WORD` | `wake_word` | `小莫` | 唤醒词（中英文均可，逗号分隔多个） |
 | `WAKE_THRESHOLD` | `wake_threshold` | `0.25` | 唤醒词检测阈值（越大越难触发） |
 | `WAKE_SCORE` | `wake_score` | `1.0` | 关键词增强分数（越大越容易通过） |
+| `FILLER_ENABLED` | `filler_enabled` | `true` | 录音结束后播放确认音 |
+| `LOG_TRANSCRIPTS` | `log_transcripts` | `false` | 终端是否打印用户语音文本 |
 
 > **Security**: Use environment variables for `ADMIN_TOKEN`. Never put real tokens in `config.yaml` (it's tracked by git).
 
@@ -106,6 +112,26 @@ python main.py --talk
 4. 修改 `config.yaml`：`stt_provider: "local-torch"`
 5. 验证 GPU 识别：`python -c "import torch; print(torch.cuda.get_device_name(0))"`
 
+### 自定义配置文件路径
+
+```bash
+python main.py --talk --config /path/to/my-config.yaml
+```
+
+### Linux 服务器部署（systemd）
+
+```bash
+# 复制并编辑 service 文件
+sudo cp voice/memoria-voice.service /etc/systemd/system/
+sudo nano /etc/systemd/system/memoria-voice.service  # 改 User/WorkingDirectory/ADMIN_TOKEN
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now memoria-voice
+sudo journalctl -u memoria-voice -f   # 查看日志
+```
+
+> Docker 容器无法访问宿主机麦克风和音箱（Windows/macOS），语音服务始终建议宿主机裸跑。
+
 ## 项目结构
 
 ```
@@ -120,7 +146,10 @@ voice/
 ├── wakeword.py          # 唤醒词检测（sherpa-onnx KWS）
 ├── memoria_client.py    # Memoria API 异步客户端
 ├── session.py           # 会话生命周期管理
+├── tts.py               # TTS provider 抽象（API/Edge/Local）
+├── pipeline.py          # Chat → TTS 流水线
 ├── models/              # VAD + KWS 模型（自动下载，不入 git）
+├── memoria-voice.service # systemd 模板
 ├── requirements.txt     # Python 依赖
 └── README.md
 ```

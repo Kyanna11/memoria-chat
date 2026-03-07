@@ -1,0 +1,26 @@
+[Unit]
+Description=Memoria Voice Service
+After=network.target
+Wants=memoria.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/memoria/voice
+ExecStart=/usr/bin/python3 main.py --talk
+Restart=on-failure
+RestartSec=5
+
+# Environment (override config.yaml)
+Environment=ADMIN_TOKEN=
+Environment=MEMORIA_URL=http://127.0.0.1:3000
+# Environment=TTS_PROVIDER=edge
+# Environment=STT_PROVIDER=local
+Environment=TRIGGER_MODE=wakeword
+# Environment=LOG_TRANSCRIPTS=false
+
+# Audio access
+SupplementaryGroups=audio
+
+[Install]
+WantedBy=multi-user.target

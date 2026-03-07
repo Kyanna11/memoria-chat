@@ -1,8 +1,39 @@
 """Memoria Voice Service — entry point."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import sys
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass
+class ListenCfg:
+    """Recording/STT config bundle — avoids parameter sprawl."""
+    vad: Any
+    sr: int
+    silence_ms: int
+    max_sec: float
+    local_stt: Any
+    client: Any
+    language: str
+    wake_listener: Any
+    filler_enabled: bool = True
+    log_transcripts: bool = False
+
+
+async def _log_and_save(session, text: str, log_transcripts: bool) -> None:
+    """Print transcript (or placeholder) and persist user message."""
+    if log_transcripts:
+        print(f"You: {text}")
+    else:
+        print("You: (已识别)")
+    try:
+        await session.add_user_message(text)
+    except Exception as e:
+        print(f"Warning: 消息保存失败 ({e})")
 
 
 def test_audio() -> None:
@@ -74,11 +105,7 @@ async def wait_for_trigger(
                 pass
 
 
-async def _listen_and_transcribe(
-    vad, sr: int, silence_ms: int, max_sec: float,
-    local_stt, client, language: str,
-    wake_listener,
-) -> str | None:
+async def _listen_and_transcribe(lc: ListenCfg) -> str | None:
     """Record via VAD -> STT -> return text, or None on failure.
 
     Pauses wake_listener during recording (mic sharing).
@@ -86,33 +113,34 @@ async def _listen_and_transcribe(
     """
     import audio_io
 
-    if wake_listener:
-        wake_listener.pause()
+    if lc.wake_listener:
+        lc.wake_listener.pause()
     try:
         print("[LISTENING] 正在听...")
 
-        vad.reset()
+        lc.vad.reset()
         audio = await asyncio.to_thread(
             audio_io.stream_record_with_vad,
-            vad, sample_rate=sr,
-            silence_ms=silence_ms,
-            max_seconds=max_sec,
+            lc.vad, sample_rate=lc.sr,
+            silence_ms=lc.silence_ms,
+            max_seconds=lc.max_sec,
         )
 
-        duration = len(audio) / sr
+        duration = len(audio) / lc.sr
         if duration < 0.3:
             print("(录音太短，已忽略)\n")
             return None
 
         # Ding after recording — confirms "I heard you, processing now"
-        await asyncio.to_thread(audio_io.play_tone)
+        if lc.filler_enabled:
+            await asyncio.to_thread(audio_io.play_tone)
         print(f"[PROCESSING] 识别中... ({duration:.1f}s)")
         try:
-            if local_stt:
-                text = await local_stt.transcribe(audio, sr=sr)
+            if lc.local_stt:
+                text = await lc.local_stt.transcribe(audio, sr=lc.sr)
             else:
-                wav_bytes = audio_io.numpy_to_wav_bytes(audio, sample_rate=sr)
-                text = await client.transcribe(wav_bytes, language=language)
+                wav_bytes = audio_io.numpy_to_wav_bytes(audio, sample_rate=lc.sr)
+                text = await lc.client.transcribe(wav_bytes, language=lc.language)
         except Exception as e:
             print(f"Error: STT 失败 ({e})\n")
             return None
@@ -123,8 +151,8 @@ async def _listen_and_transcribe(
 
         return text.strip()
     finally:
-        if wake_listener:
-            wake_listener.resume()
+        if lc.wake_listener:
+            lc.wake_listener.resume()
 
 
 async def _do_speak(
@@ -132,9 +160,7 @@ async def _do_speak(
     tts_provider, tts_voice: str, tts_speed: float,
     triggers: list[asyncio.Event],
     space_event: asyncio.Event, wake_event: asyncio.Event,
-    wake_listener,
-    vad, sr: int, silence_ms: int, max_sec: float,
-    local_stt, language: str,
+    lc: ListenCfg,
 ) -> None:
     """Run AI pipeline with barge-in support.  Loops on repeated barge-ins.
 
@@ -153,8 +179,8 @@ async def _do_speak(
         pipeline_cancel = asyncio.Event()
 
         # Pause wake word listener during SPEAKING (prevent AI voice self-trigger)
-        if wake_listener:
-            wake_listener.pause()
+        if lc.wake_listener:
+            lc.wake_listener.pause()
 
         # Discard stale triggers before monitoring
         space_event.clear()
@@ -213,8 +239,8 @@ async def _do_speak(
                 pass
 
         # Resume wake word listener
-        if wake_listener:
-            wake_listener.resume()
+        if lc.wake_listener:
+            lc.wake_listener.resume()
 
         # Process pipeline result (only available when not barged_in)
         if not barged_in:
@@ -249,20 +275,13 @@ async def _do_speak(
 
         # === Barge-in path: listen for new user input ===
         sm.transition(State.LISTENING)
-        text = await _listen_and_transcribe(
-            vad, sr, silence_ms, max_sec,
-            local_stt, client, language, wake_listener,
-        )
+        text = await _listen_and_transcribe(lc)
         if text is None:
             sm.transition(State.IDLE)
             return
 
         sm.transition(State.PROCESSING)
-        print(f"You: {text}")
-        try:
-            await session.add_user_message(text)
-        except Exception as e:
-            print(f"Warning: 消息保存失败 ({e})")
+        await _log_and_save(session, text, lc.log_transcripts)
 
         # Loop back to SPEAKING for the new response (supports repeated barge-ins)
         sm.transition(State.SPEAKING)
@@ -289,6 +308,7 @@ async def talk_loop() -> None:
     tts_voice = cfg["tts_voice"]
     tts_speed = cfg.get("tts_speed", 1.0)
     trigger_mode = cfg.get("trigger_mode", "keypress")
+    talk_key = cfg.get("talk_key", "space")
 
     sm = StateMachine()
     vad = SileroVAD(threshold=threshold)
@@ -315,7 +335,7 @@ async def talk_loop() -> None:
     if use_keypress:
         import keyboard as _kb
         keyboard = _kb
-        keyboard.on_press_key("space", lambda _: loop.call_soon_threadsafe(space_event.set))
+        keyboard.on_press_key(talk_key, lambda _: loop.call_soon_threadsafe(space_event.set))
 
     # Wake word listener (Step 5)
     wake_event = asyncio.Event()
@@ -333,6 +353,15 @@ async def talk_loop() -> None:
         )
         wake_listener.start()
 
+    # Bundle recording/STT config (avoids parameter sprawl)
+    lc = ListenCfg(
+        vad=vad, sr=sr, silence_ms=silence_ms, max_sec=max_sec,
+        local_stt=local_stt, client=client, language=language,
+        wake_listener=wake_listener,
+        filler_enabled=cfg.get("filler_enabled", True),
+        log_transcripts=cfg.get("log_transcripts", False),
+    )
+
     # Pre-warm audio player + STT + TTS models in parallel
     warmup = [asyncio.to_thread(audio_io.get_tts_player, 24000)]
     if local_stt:
@@ -349,7 +378,7 @@ async def talk_loop() -> None:
 
     trigger_hint = []
     if use_keypress:
-        trigger_hint.append("Space")
+        trigger_hint.append(talk_key.capitalize())
     if use_wakeword:
         trigger_hint.append(f"wake word ({wake_words_raw})")
     hint = " or ".join(trigger_hint)
@@ -398,22 +427,13 @@ async def talk_loop() -> None:
 
                 # Listen + transcribe
                 sm.transition(State.LISTENING)
-                text = await _listen_and_transcribe(
-                    vad, sr, silence_ms, max_sec,
-                    local_stt, client, language, wake_listener,
-                )
+                text = await _listen_and_transcribe(lc)
                 if text is None:
                     sm.transition(State.IDLE)
                     continue
 
                 sm.transition(State.PROCESSING)
-                print(f"You: {text}")
-
-                # Persist user message (non-fatal)
-                try:
-                    await session.add_user_message(text)
-                except Exception as e:
-                    print(f"Warning: 消息保存失败 ({e})")
+                await _log_and_save(session, text, lc.log_transcripts)
 
                 # --- AI response pipeline (with barge-in support) ---
                 # _do_speak loops internally on barge-ins, returns in IDLE
@@ -422,9 +442,7 @@ async def talk_loop() -> None:
                     sm, client, session,
                     tts_provider, tts_voice, tts_speed,
                     triggers, space_event, wake_event,
-                    wake_listener,
-                    vad, sr, silence_ms, max_sec,
-                    local_stt, language,
+                    lc,
                 )
 
             # ============================================================
@@ -451,7 +469,11 @@ async def talk_loop() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Memoria Voice Service")
+    parser = argparse.ArgumentParser(
+        description="Memoria Voice Service — voice interface for Memoria.chat",
+        epilog="Config: edit voice/config.yaml or set environment variables. "
+               "See voice/README.md for details.",
+    )
     parser.add_argument(
         "--test-audio",
         action="store_true",
@@ -460,9 +482,19 @@ def main() -> None:
     parser.add_argument(
         "--talk",
         action="store_true",
-        help="Space-to-talk mode with STT and conversation persistence",
+        help="Voice conversation mode (trigger → record → STT → AI → TTS)",
+    )
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        help="Path to config.yaml (default: voice/config.yaml)",
     )
     args = parser.parse_args()
+
+    if args.config:
+        from config import cfg, load_config
+        cfg.clear()
+        cfg.update(load_config(args.config))
 
     if args.test_audio:
         try:
@@ -480,9 +512,7 @@ def main() -> None:
             sys.exit(1)
         return
 
-    print("Usage: python main.py --test-audio | --talk")
-    print("  --test-audio   Record 5s and play back")
-    print("  --talk         Space-to-talk with STT")
+    parser.print_help()
     sys.exit(0)
 
 

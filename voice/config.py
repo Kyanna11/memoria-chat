@@ -26,6 +26,9 @@ _DEFAULTS = {
     "stt_model": "small",
     "tts_speed": 1.0,
     "tts_provider": "api",
+    "talk_key": "space",
+    "filler_enabled": True,
+    "log_transcripts": False,
 }
 
 # Environment variable name → config key
@@ -50,6 +53,9 @@ _ENV_MAP = {
     "WAKE_WORD": "wake_word",
     "WAKE_THRESHOLD": "wake_threshold",
     "WAKE_SCORE": "wake_score",
+    "TALK_KEY": "talk_key",
+    "FILLER_ENABLED": "filler_enabled",
+    "LOG_TRANSCRIPTS": "log_transcripts",
 }
 
 
@@ -99,7 +105,16 @@ def load_config(path: str | None = None) -> dict:
             # Coerce numeric values; skip bad input
             default = _DEFAULTS.get(cfg_key)
             try:
-                if isinstance(default, int):
+                if isinstance(default, bool):
+                    lower = val.lower()
+                    if lower in ("1", "true", "yes"):
+                        val = True
+                    elif lower in ("0", "false", "no"):
+                        val = False
+                    else:
+                        print(f"Warning: invalid {env_key}={val!r}, expected true/false, using default {default}")
+                        continue
+                elif isinstance(default, int):
                     val = int(val)
                 elif isinstance(default, float):
                     val = float(val)
