@@ -31,24 +31,23 @@ router.put("/prompts", async (req, res) => {
 
   const { system, memory, memoryStore } = validated.value;
   try {
-    const writes = [];
-    if (system !== undefined) writes.push(atomicWrite(SYSTEM_PATH, system));
+    // 顺序写入，避免一个成功一个失败导致数据不一致
+    if (system !== undefined) await atomicWrite(SYSTEM_PATH, system);
 
     // memoryStore 优先于 memory（新客户端发 memoryStore，旧客户端发 memory 纯文本）
     if (memoryStore !== undefined) {
-      writes.push(withMemoryLock(() => writeMemoryStore(memoryStore)));
+      await withMemoryLock(() => writeMemoryStore(memoryStore));
     } else if (memory !== undefined) {
       // 纯文本写入：与当前 memoryStore 做 bigram 智能匹配，继承已有条目的元数据
-      writes.push(withMemoryLock(async () => {
+      await withMemoryLock(async () => {
         const currentStore = await readMemoryStore().catch(() => ({
           version: 1, identity: [], preferences: [], events: [],
         }));
         const merged = mergeTextIntoMemoryStore(memory, currentStore);
         await writeMemoryStore(merged);
-      }));
+      });
     }
 
-    await Promise.all(writes);
     res.json({ ok: true });
   } catch (err) {
     console.error("[prompts] error:", err);
@@ -142,21 +141,20 @@ router.post("/prompts/versions/:ts/restore", async (req, res) => {
     // 先备份当前状态，再恢复旧版本
     await backupPrompts();
 
-    const writes = [];
-    if (version.system !== undefined) writes.push(atomicWrite(SYSTEM_PATH, version.system));
+    // 顺序写入，避免部分成功导致数据不一致
+    if (version.system !== undefined) await atomicWrite(SYSTEM_PATH, version.system);
 
     // 优先恢复 memoryStore（新版备份），否则回退到纯文本 memory
     if (version.memoryStore) {
-      writes.push(withMemoryLock(() => writeMemoryStore(version.memoryStore)));
+      await withMemoryLock(() => writeMemoryStore(version.memoryStore));
     } else if (version.memory !== undefined) {
       const { MEMORY_PATH, migrateMemoryMd, writeMemoryStore: writeMStore } = require("../lib/prompts");
-      writes.push(withMemoryLock(async () => {
+      await withMemoryLock(async () => {
         await atomicWrite(MEMORY_PATH, version.memory);
         const store = await migrateMemoryMd();
         await writeMStore(store);
-      }));
+      });
     }
-    await Promise.all(writes);
 
     res.json({ ok: true, restored: version.timestamp });
   } catch (err) {

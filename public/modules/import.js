@@ -63,10 +63,11 @@ async function loadSummaryModelSelector() {
     const config = await configRes.json();
     summaryModel.innerHTML = "";
     models.forEach((m) => {
+      const id = typeof m === "string" ? m : m.id;
       const opt = document.createElement("option");
-      opt.value = m;
-      opt.textContent = m;
-      if (m === config.model) opt.selected = true;
+      opt.value = id;
+      opt.textContent = id;
+      if (id === config.model) opt.selected = true;
       summaryModel.appendChild(opt);
     });
     summaryModelsLoaded = true;
@@ -580,7 +581,7 @@ summaryGenerateBtn.addEventListener("click", async () => {
 
     // 告知用户哪些对话因超限未被分析
     if (data.skippedTitles && data.skippedTitles.length > 0) {
-      const names = data.skippedTitles.map((t) => "\u300c" + t + "\u300d").join("\u3001");
+      const names = data.skippedTitles.map((title) => "\u300c" + title + "\u300d").join("\u3001");
       showImportError(t("import_analyzed_partial", {
         done: data.analyzedCount, total: data.totalSelected, names,
       }));

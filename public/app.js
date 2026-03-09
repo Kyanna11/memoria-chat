@@ -367,10 +367,10 @@ if (voiceEntryBtn) {
 
   // 检查是否配置了 API Key
   try {
-    const modelsRes = await apiFetch("/api/models");
-    if (modelsRes.ok) {
-      const models = await modelsRes.json();
-      if (Array.isArray(models) && models.length === 0) {
+    const configRes = await apiFetch("/api/config");
+    if (configRes.ok) {
+      const config = await configRes.json();
+      if (config.hasAnyProvider === false) {
         confirm(t("err_no_api_keys"));
       }
     }

@@ -206,16 +206,23 @@ router.post("/voice/tts", async (req, res) => {
       // 降级到 OpenAI TTS（如果有 key）
       if (clients.openaiClient) {
         console.log("[voice/tts] falling back to OpenAI TTS");
+        const fallbackAbort = new AbortController();
+        const fallbackTimer = setTimeout(() => fallbackAbort.abort(), TTS_TIMEOUT_MS);
         try {
           const fallbackBuf = await synthesizeOpenaiTts(
-            clients.openaiClient, text, rawVoice, speed
+            clients.openaiClient, text, rawVoice, speed, fallbackAbort.signal
           );
           res.set("Content-Type", "audio/mpeg");
           res.set("X-TTS-Fallback", "api");
           return res.send(fallbackBuf);
         } catch (fallbackErr) {
+          if (fallbackErr.name === "AbortError") {
+            return res.status(504).json({ error: "OpenAI TTS fallback timed out." });
+          }
           console.error("[voice/tts] OpenAI fallback also failed:", fallbackErr.message);
           return res.status(502).json({ error: "Edge TTS and OpenAI TTS both failed." });
+        } finally {
+          clearTimeout(fallbackTimer);
         }
       }
       return res.status(502).json({ error: "Edge TTS failed: " + edgeErr.message });
@@ -278,15 +285,12 @@ router.post("/voice/tts", async (req, res) => {
 });
 
 // OpenAI TTS 辅助函数（用于 Edge TTS 降级）
-async function synthesizeOpenaiTts(client, text, rawVoice, speed) {
+async function synthesizeOpenaiTts(client, text, rawVoice, speed, signal) {
   const voice = TTS_VOICES.has(rawVoice) ? rawVoice : "alloy";
-  const response = await client.audio.speech.create({
-    model: "tts-1",
-    input: text,
-    voice,
-    speed,
-    response_format: "mp3",
-  });
+  const response = await client.audio.speech.create(
+    { model: "tts-1", input: text, voice, speed, response_format: "mp3" },
+    ...(signal ? [{ signal }] : []),
+  );
   return Buffer.from(await response.arrayBuffer());
 }
 

@@ -25,6 +25,7 @@ export class TtsPlayer extends EventTarget {
     this._playbackGen = 0;
     this._currentSource = null;
     this._started = false;
+    this._sealed = false;  // true = 不会再有新句子入队
   }
 
   /** 暴露给球体可视化的 AnalyserNode */
@@ -101,8 +102,8 @@ export class TtsPlayer extends EventTarget {
       }
       // null = 跳过的句子，继续检查下一个
     }
-    // 没有连续就绪的了；如果所有 fetch 都完成且没有在播放，发 end
-    if (this._pendingFetches.length === 0 && this._ready.size === 0 && this._started) {
+    // 没有连续就绪的了；只有在 seal() 被调用后才判断全部完成
+    if (this._sealed && this._pendingFetches.length === 0 && this._ready.size === 0 && this._started) {
       this._playing = false;
       this._currentSource = null;
       this._started = false;
@@ -133,6 +134,12 @@ export class TtsPlayer extends EventTarget {
     this.dispatchEvent(new CustomEvent("sentence", { detail: { text } }));
   }
 
+  /** 标记不会再有新句子入队，当前队列播完后触发 end */
+  seal() {
+    this._sealed = true;
+    if (!this._playing) this._tryPlayNext();
+  }
+
   /** 停止播放，清空队列，取消进行中的 TTS 请求 */
   stop() {
     this._playbackGen++;
@@ -145,6 +152,7 @@ export class TtsPlayer extends EventTarget {
     this._pendingFetches = [];
     this._playing = false;
     this._started = false;
+    this._sealed = false;
   }
 
   destroy() {

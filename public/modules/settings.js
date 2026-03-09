@@ -625,7 +625,7 @@ savePromptsBtn.addEventListener("click", async () => {
 
     // 保存模型配置（含个性化字段）
     const configBody = {
-      model: configModel.value,
+      ...(configModel.value ? { model: configModel.value } : {}),
       temperature: parseFloat(configTemp.value),
       top_p: parseFloat(configTopP.value),
       presence_penalty: parseFloat(configPP.value),

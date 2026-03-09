@@ -13,7 +13,9 @@ const RECOMMENDED_CONFIG = {
 };
 
 router.get("/config", async (req, res) => {
-  res.json(await readConfig());
+  const config = await readConfig();
+  const { hasAnyProvider } = require("../lib/clients");
+  res.json({ ...config, hasAnyProvider });
 });
 
 router.put("/config", async (req, res) => {

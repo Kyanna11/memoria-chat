@@ -7,11 +7,18 @@
 - **语音页自动记忆** — 语音对话中自动学习用户偏好/身份信息，紫色气泡通知已学到的内容（8 秒后淡出）
 - **本地 Whisper STT** — 语音设置中"本地 Whisper"选项现已可用，支持 `STT_BASE_URL` 对接本地 Whisper 服务器，或自动调用 Python 脚本（faster-whisper / openai-whisper 双后端）
 - **URL hash 路由** — `/#settings` 直接打开设置面板，`/#convId` 跳转指定对话
+- **无 API Key 也能启动** — 未配置 API Key 时服务器正常启动，前端弹窗提示配置但可跳过浏览界面
+- **Groq Whisper STT** — 语音设置新增 Groq Whisper 选项（免费极快），替代本地 Python 方案；移除火山引擎预留选项
 
 ### Bug Fixes
 - **语音页英文对话回中文** — 语音系统消息现根据界面语言动态切换中英文，不再硬编码中文
 - **英文对话记忆存成中文** — auto-learn 增加语言检测，英文对话强制要求 LLM 用英文记录
 - **本地 Whisper 中文乱码** — Windows 下 Python 子进程输出强制 UTF-8 编码，修复 GBK/cp936 乱码
+- **TTS 句间过早结束** — 修复 SSE 流式播放时 TTS 在句子间隙误触发"播放完毕"，导致后续句子不朗读
+- **设置写入非原子** — prompt 和记忆的写入从并行改为顺序，避免部分成功数据不一致
+- **Edge TTS 降级无超时** — 降级到 OpenAI TTS 时增加 30 秒超时保护，避免请求无限挂起
+- **导入模型列表显示 [object Object]** — 模型选项正确提取 id 字段
+- **导入跳过提示变量遮蔽** — import.js 中箭头函数参数不再遮蔽 i18n 翻译函数
 
 ### Improvements
 - **模型列表并行加载** — 三个 Provider 并行请求 + 8 秒超时 + 启动预热缓存，首次点击秒开

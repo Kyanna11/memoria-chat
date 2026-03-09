@@ -511,6 +511,9 @@ export class VoiceController {
       this._ttsPlayer.enqueue(tail, ttsOptions);
     }
 
+    // 标记 TTS 不会再有新句子
+    this._ttsPlayer.seal();
+
     // 追加 assistant message
     const fullText = aiParts.join("");
     if (fullText) {
