@@ -213,7 +213,7 @@ export function renderMessages() {
           imgContainer.appendChild(img);
         }
       });
-      if (imgContainer.children.length > 0) bubble.appendChild(imgContainer);
+      if (imgContainer.children.length > 0) div.appendChild(imgContainer);
       const combinedText = textParts.join("\n").trim();
       if (combinedText) {
         if (msg.role === "user") {

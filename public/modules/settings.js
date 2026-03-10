@@ -395,6 +395,14 @@ document.addEventListener("lang-changed", () => {
   if (memoryTimeline && !memoryTimeline.classList.contains("hidden")) {
     loadTimeline();
   }
+  // 刷新版本历史（如果已展开）
+  if (toggleVersionsBtn.classList.contains("active") && versionsLoaded) {
+    loadVersionHistory(true);
+  }
+  // 刷新当前模型文本
+  if (state.currentConfig?.model) {
+    currentModelDisplay.textContent = t("label_current_model", { model: state.currentConfig.model });
+  }
 });
 
 // ===== 记忆导出 =====
@@ -1044,7 +1052,10 @@ toggleVersionsBtn.addEventListener("click", () => {
   const isExpanding = !toggleVersionsBtn.classList.contains("active");
   toggleVersionsBtn.classList.toggle("active", isExpanding);
   versionHistory.classList.toggle("hidden", !isExpanding);
-  if (isExpanding) loadVersionHistory();
+  if (isExpanding) {
+    loadVersionHistory();
+    requestAnimationFrame(() => versionHistory.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
 });
 
 // 版本列表事件委托（对比 / 恢复）

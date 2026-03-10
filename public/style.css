@@ -641,6 +641,7 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  text-align: center;
 }
 
 .welcome-logo {
@@ -652,6 +653,7 @@ body {
 .welcome-subtext {
   font-size: 14px;
   color: var(--text-secondary);
+  text-align: center;
 }
 
 .message {
@@ -2007,6 +2009,7 @@ body {
 
 .memory-add-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-top: 4px;
@@ -2025,6 +2028,7 @@ body {
 
 .memory-add-form input[type="text"] {
   flex: 1;
+  min-width: 0;
   background: var(--bg-input, #f5f5f5);
   border: 1px solid var(--border, #ddd);
   border-radius: 8px;
@@ -2469,20 +2473,22 @@ a.timeline-source:hover {
 /* ===== 人格指令工具栏 ===== */
 .system-toolbar {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  align-items: stretch;
   margin-bottom: 10px;
 }
 
 .system-toolbar .toolbar-group {
   display: flex;
-  align-items: center;
   gap: 4px;
+  align-items: stretch;
+  width: 100%;
 }
 
 .system-toolbar .toolbar-btn {
+  flex: 1;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   background: transparent;
   border: 1px solid var(--border);
@@ -2494,6 +2500,7 @@ a.timeline-source:hover {
   cursor: pointer;
   transition: all 0.2s ease;
   font-family: inherit;
+  text-align: center;
 }
 
 .system-toolbar .toolbar-btn:hover {
@@ -2830,6 +2837,7 @@ a.timeline-source:hover {
 @media (max-width: 640px) {
   .diff-body {
     flex-direction: column;
+    overflow-y: auto;
   }
   .diff-panel {
     max-width: 96vw;

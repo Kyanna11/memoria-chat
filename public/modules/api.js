@@ -238,13 +238,14 @@ export async function apiFetch(url, options = {}, allowRetry = true) {
   if (response.status === 401) {
     if (allowRetry) {
       if (!_tokenPromptLock) {
-        let _resolve;
-        _tokenPromptLock = new Promise((r) => { _resolve = r; });
-        const token = window.prompt(t("err_auth_prompt"));
-        _resolve(token && token.trim() ? token.trim() : null);
+        _tokenPromptLock = new Promise((resolve) => {
+          const token = window.prompt(t("err_auth_prompt"));
+          resolve(token && token.trim() ? token.trim() : null);
+        });
+        // 延迟释放锁：等所有并发 awaiter 都消费完再清
+        _tokenPromptLock.finally(() => { setTimeout(() => { _tokenPromptLock = null; }, 0); });
       }
       const token = await _tokenPromptLock;
-      _tokenPromptLock = null;          // 无论成功与否，释放锁，允许下次重新弹框
       if (token) {
         localStorage.setItem("api_token", token);
         document.cookie = "api_token=" + encodeURIComponent(token) + "; path=/; SameSite=Strict";

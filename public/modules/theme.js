@@ -43,11 +43,11 @@ function applyTheme(preference, toggle) {
 
 /** 应用已存储的主题（纯函数，不绑定任何 DOM 事件），voice 页面可安全调用 */
 export function applyStoredTheme() {
-  applyTheme(localStorage.getItem(THEME_KEY) || "system", null);
+  applyTheme(localStorage.getItem(THEME_KEY) || "light", null);
 
   // 监听系统主题变化
   window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
-    if ((localStorage.getItem(THEME_KEY) || "system") === "system") {
+    if ((localStorage.getItem(THEME_KEY) || "light") === "system") {
       applyTheme("system", null);
     }
   });
@@ -58,18 +58,18 @@ export function bindThemeToggle() {
   const themeToggle = document.getElementById("theme-toggle");
   if (!themeToggle) return;
 
-  applyTheme(localStorage.getItem(THEME_KEY) || "system", themeToggle);
+  applyTheme(localStorage.getItem(THEME_KEY) || "light", themeToggle);
 
   themeToggle.addEventListener("click", () => {
     const order = ["dark", "light", "system"];
-    const current = localStorage.getItem(THEME_KEY) || "system";
+    const current = localStorage.getItem(THEME_KEY) || "light";
     const next = order[(order.indexOf(current) + 1) % order.length];
     localStorage.setItem(THEME_KEY, next);
     applyTheme(next, themeToggle);
   });
 
   document.addEventListener("lang-changed", () => {
-    applyTheme(localStorage.getItem(THEME_KEY) || "system", themeToggle);
+    applyTheme(localStorage.getItem(THEME_KEY) || "light", themeToggle);
   });
 }
 
@@ -77,7 +77,7 @@ export function bindThemeToggle() {
 export function cycleTheme() {
   const themeToggle = document.getElementById("theme-toggle");
   const order = ["dark", "light", "system"];
-  const current = localStorage.getItem(THEME_KEY) || "system";
+  const current = localStorage.getItem(THEME_KEY) || "light";
   const next = order[(order.indexOf(current) + 1) % order.length];
   localStorage.setItem(THEME_KEY, next);
   applyTheme(next, themeToggle);

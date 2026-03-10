@@ -383,10 +383,19 @@
   }
 }
 
+/* 中等高度手机（iPhone 13/14/15 等，600-750px） */
+@media (max-height: 750px) {
+  #voice-orb { width: 180px; height: 180px; }
+  #voice-text-area { max-height: 35vh; }
+  #voice-orb-area { gap: 8px; padding: 8px; justify-content: flex-start; padding-top: 2vh; }
+  #voice-controls { padding: 12px 12px 20px; }
+}
+
+/* 超小屏（iPhone SE / 横屏等，<600px） */
 @media (max-height: 600px) {
   #voice-top-bar { padding: 8px 12px; }
-  #voice-orb { width: 200px; height: 200px; }
+  #voice-orb { width: 160px; height: 160px; }
   #voice-text-area { max-height: 18vh; margin: 0 8px; }
   #voice-controls { padding: 12px 12px 20px; }
-  #voice-orb-area { gap: 12px; }
+  #voice-orb-area { gap: 8px; padding: 8px; }
 }
