@@ -4,7 +4,7 @@ import { saveConversations, createConversation, renderChatList, saveLocalCache }
 import { renderMessages, scrollToBottom, startStreamFollow, stopStreamFollow, isNearBottom, createMsgToolbar, getMessageText, appendMemoryIndicator, getCategoryLabel, renderSummaryCard } from "./render.js";
 import { renderImagePreview } from "./images.js";
 import { clearPendingDocument, renderDocumentPreview } from "./files.js";
-import { t } from "./i18n.js";
+import { t, getLang } from "./i18n.js";
 import { parseSseStream } from "./sse-reader.js";
 
 function showSearchStatus(bubble, cursor, statusText) {
@@ -207,11 +207,17 @@ function showLearnCard(ops) {
   document.body.appendChild(card);
   _activeLearnCard = card;
 
-  // 3 秒后自动折叠
+  // 3 秒后自动折叠，再过 8 秒淡出消失
   setTimeout(() => {
     if (card.isConnected && !card.classList.contains("collapsed")) {
       card.classList.add("collapsed");
     }
+    setTimeout(() => {
+      if (card.isConnected) {
+        card.classList.add("fade-out");
+        setTimeout(() => { card.remove(); _activeLearnCard = null; }, 500);
+      }
+    }, 8000);
   }, 3000);
 }
 
@@ -682,6 +688,8 @@ async function generateTitle(conv) {
   try {
     const res = await apiFetch(`/api/conversations/${conv.id}/generate-title`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lang: getLang() }),
     });
     if (!res.ok) return;
     const { title } = await res.json();

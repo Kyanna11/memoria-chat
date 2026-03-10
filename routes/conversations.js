@@ -338,10 +338,12 @@ router.delete("/conversations/:id", async (req, res) => {
 
 // ===== 自动生成对话标题 =====
 
-const TITLE_PROMPT = `根据以下对话内容生成一个简洁的标题。要求：
-- 不超过20个字
-- 直接输出标题文本，不加引号、标点前缀或其他格式
-- 用对话内容的主要语言`;
+function getTitlePrompt(lang) {
+  if (lang === "en") {
+    return "Generate a concise title for the following conversation.\n- Max 10 words\n- Output the title text directly, no quotes or formatting\n- Use the primary language of the conversation";
+  }
+  return "根据以下对话内容生成一个简洁的标题。\n- 不超过20个字\n- 直接输出标题文本，不加引号、标点前缀或其他格式\n- 用对话内容的主要语言";
+}
 
 router.post("/conversations/:id/generate-title", async (req, res) => {
   const filePath = getConversationPath(req.params.id);
@@ -373,9 +375,9 @@ router.post("/conversations/:id/generate-title", async (req, res) => {
         {
           model: AUTO_LEARN_MODEL,
           messages: [
-            { role: "system", content: TITLE_PROMPT },
+            { role: "system", content: getTitlePrompt(req.body.lang) },
             ...sample,
-            { role: "user", content: "请为以上对话生成标题。" },
+            { role: "user", content: req.body.lang === "en" ? "Generate a title for this conversation." : "请为以上对话生成标题。" },
           ],
           max_tokens: 50,
           temperature: 0.3,
